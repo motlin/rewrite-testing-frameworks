@@ -363,6 +363,259 @@ class MigrateJUnitTestCaseTest implements RewriteTest {
     }
 
     @Test
+    void updatesConstructorCallersInSameFile() {
+        rewriteRun(
+          //language=java
+          java(
+            """
+              import junit.framework.TestCase;
+
+              public class MathTest extends TestCase {
+                  public MathTest(String name) {
+                      super(name);
+                  }
+
+                  public static MathTest create() {
+                      return new MathTest("math");
+                  }
+              }
+              """,
+            """
+              public class MathTest {
+
+                  public static MathTest create() {
+                      return new MathTest();
+                  }
+              }
+              """
+          )
+        );
+    }
+
+    @Test
+    void updatesConstructorCallersAcrossFilesAndHierarchy() {
+        rewriteRun(
+          //language=java
+          java(
+            """
+              package example;
+              import junit.framework.TestCase;
+
+              public abstract class BaseTest extends TestCase {
+                  public BaseTest(String name) {
+                      super(name);
+                  }
+              }
+              """,
+            """
+              package example;
+
+              public abstract class BaseTest {
+              }
+              """
+          ),
+          //language=java
+          java(
+            """
+              package example;
+
+              public class MathTest extends BaseTest {
+                  public MathTest(String name) {
+                      super(name);
+                  }
+              }
+              """,
+            """
+              package example;
+
+              public class MathTest extends BaseTest {
+              }
+              """
+          ),
+          //language=java
+          java(
+            """
+              package example;
+
+              class Caller {
+                  MathTest create() {
+                      return new MathTest("math");
+                  }
+              }
+              """,
+            """
+              package example;
+
+              class Caller {
+                  MathTest create() {
+                      return new MathTest();
+                  }
+              }
+              """
+          )
+        );
+    }
+
+    @Test
+    void updatesThisConstructorDelegationAndPreservesOtherOverloads() {
+        rewriteRun(
+          //language=java
+          java(
+            """
+              import junit.framework.TestCase;
+
+              public class MathTest extends TestCase {
+                  public MathTest(String name) {
+                      super(name);
+                  }
+
+                  public MathTest(int value) {
+                      this("math");
+                      System.out.println(value);
+                  }
+              }
+              """,
+            """
+              public class MathTest {
+                  public MathTest() {
+                  }
+
+                  public MathTest(int value) {
+                      this();
+                      System.out.println(value);
+                  }
+              }
+              """
+          )
+        );
+    }
+
+    @Test
+    void preservesSideEffectsInConstructorArguments() {
+        rewriteRun(
+          //language=java
+          java(
+            """
+              import junit.framework.TestCase;
+
+              public class MathTest extends TestCase {
+                  public MathTest(String name) {
+                      super(name);
+                  }
+
+                  public static MathTest create() {
+                      return new MathTest(System.getProperty("example.name"));
+                  }
+              }
+              """,
+            """
+              public class MathTest {
+                  public MathTest(String name) {
+                  }
+
+                  public static MathTest create() {
+                      return new MathTest(System.getProperty("example.name"));
+                  }
+              }
+              """
+          )
+        );
+    }
+
+    @Test
+    void preservesConstructorReferencesAndUnrelatedClasses() {
+        rewriteRun(
+          //language=java
+          java(
+            """
+              import junit.framework.TestCase;
+              import java.util.function.Function;
+
+              public class MathTest extends TestCase {
+                  public MathTest(String name) {
+                      super(name);
+                  }
+
+                  public static Function<String, MathTest> factory() {
+                      return MathTest::new;
+                  }
+              }
+
+              class Other {
+                  Other(String name) {
+                  }
+
+                  static Other create() {
+                      return new Other("other");
+                  }
+              }
+              """,
+            """
+              import java.util.function.Function;
+
+              public class MathTest {
+                  public MathTest(String name) {
+                  }
+
+                  public static Function<String, MathTest> factory() {
+                      return MathTest::new;
+                  }
+              }
+
+              class Other {
+                  Other(String name) {
+                  }
+
+                  static Other create() {
+                      return new Other("other");
+                  }
+              }
+              """
+          )
+        );
+    }
+
+    @Test
+    void preservesExistingNoArgumentConstructorBehavior() {
+        rewriteRun(
+          //language=java
+          java(
+            """
+              import junit.framework.TestCase;
+
+              public class MathTest extends TestCase {
+                  public MathTest(String name) {
+                      super(name);
+                  }
+
+                  public MathTest() {
+                      System.out.println("default");
+                  }
+
+                  public static MathTest create() {
+                      return new MathTest("math");
+                  }
+              }
+              """,
+            """
+              public class MathTest {
+                  public MathTest(String name) {
+                  }
+
+                  public MathTest() {
+                      System.out.println("default");
+                  }
+
+                  public static MathTest create() {
+                      return new MathTest("math");
+                  }
+              }
+              """
+          )
+        );
+    }
+
+    @Test
     void constructorWithAdditionalStatementsIsKept() {
         //language=java
         rewriteRun(
