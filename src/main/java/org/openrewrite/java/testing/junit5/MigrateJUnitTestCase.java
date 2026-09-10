@@ -19,7 +19,7 @@ import lombok.Getter;
 import org.jspecify.annotations.Nullable;
 import org.openrewrite.ExecutionContext;
 import org.openrewrite.Preconditions;
-import org.openrewrite.Recipe;
+import org.openrewrite.ScanningRecipe;
 import org.openrewrite.TreeVisitor;
 import org.openrewrite.internal.ListUtils;
 import org.openrewrite.java.*;
@@ -30,16 +30,19 @@ import org.openrewrite.java.tree.JavaType;
 import org.openrewrite.java.tree.TextComment;
 import org.openrewrite.java.tree.TypeUtils;
 import org.openrewrite.marker.Markers;
+import org.openrewrite.marker.SearchResult;
 
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import static java.util.Arrays.asList;
+import static java.util.Collections.emptyList;
 
-public class MigrateJUnitTestCase extends Recipe {
+public class MigrateJUnitTestCase extends ScanningRecipe<Set<String>> {
 
     private static final AnnotationMatcher JUNIT_TEST_ANNOTATION_MATCHER = new AnnotationMatcher("@org.junit.Test");
     private static final AnnotationMatcher JUNIT_AFTER_ANNOTATION_MATCHER = new AnnotationMatcher("@org.junit.*After*");
@@ -64,7 +67,41 @@ public class MigrateJUnitTestCase extends Recipe {
     final String description = "Convert JUnit 4 `TestCase` to JUnit Jupiter.";
 
     @Override
-    public TreeVisitor<?, ExecutionContext> getVisitor() {
+    public Set<String> getInitialValue(ExecutionContext ctx) {
+        return new HashSet<>();
+    }
+
+    @Override
+    public TreeVisitor<?, ExecutionContext> getScanner(Set<String> referencedConstructors) {
+        return new JavaIsoVisitor<ExecutionContext>() {
+            @Override
+            public J.NewClass visitNewClass(J.NewClass newClass, ExecutionContext ctx) {
+                recordConstructor(newClass.getConstructorType());
+                return super.visitNewClass(newClass, ctx);
+            }
+
+            @Override
+            public J.MethodInvocation visitMethodInvocation(J.MethodInvocation method, ExecutionContext ctx) {
+                recordConstructor(method.getMethodType());
+                return super.visitMethodInvocation(method, ctx);
+            }
+
+            @Override
+            public J.MemberReference visitMemberReference(J.MemberReference memberReference, ExecutionContext ctx) {
+                recordConstructor(memberReference.getMethodType());
+                return super.visitMemberReference(memberReference, ctx);
+            }
+
+            private void recordConstructor(JavaType.@Nullable Method method) {
+                if (method != null && method.isConstructor()) {
+                    referencedConstructors.add(method.getDeclaringType().getFullyQualifiedName());
+                }
+            }
+        };
+    }
+
+    @Override
+    public TreeVisitor<?, ExecutionContext> getVisitor(Set<String> referencedConstructors) {
         return Preconditions.check(Preconditions.or(
                         new UsesType<>("junit.framework.TestCase", false),
                         new UsesType<>("junit.framework.Assert", false)
@@ -73,7 +110,7 @@ public class MigrateJUnitTestCase extends Recipe {
                     @Override
                     public J.CompilationUnit visitCompilationUnit(J.CompilationUnit cu, ExecutionContext ctx) {
                         J.CompilationUnit c = super.visitCompilationUnit(cu, ctx);
-                        doAfterVisit(new TestCaseVisitor());
+                        doAfterVisit(new TestCaseVisitor(referencedConstructors));
                         // ChangeType for org.junit.Assert method invocations because TestCase extends org.junit.Assert
                         doAfterVisit(new ChangeType("junit.framework.TestCase", "org.junit.Assert", true).getVisitor());
                         doAfterVisit(new ChangeType("junit.framework.Assert", "org.junit.Assert", true).getVisitor());
@@ -109,6 +146,12 @@ public class MigrateJUnitTestCase extends Recipe {
         private static final Set<String> SUPERTYPES_REMOVED_BY_MIGRATION = new HashSet<>(asList(
                 "junit.framework.TestCase", "junit.framework.Assert", "junit.framework.Test"));
 
+        private final Set<String> referencedConstructors;
+
+        private TestCaseVisitor(Set<String> referencedConstructors) {
+            this.referencedConstructors = referencedConstructors;
+        }
+
         @Override
         public J.ClassDeclaration visitClassDeclaration(J.ClassDeclaration classDecl, ExecutionContext ctx) {
             if (!isSupertypeTestCase(classDecl.getType())) {
@@ -135,6 +178,37 @@ public class MigrateJUnitTestCase extends Recipe {
             if (md.isConstructor() &&
                 (md.getBody() == null || md.getBody().getStatements().isEmpty())) {
                 return null;
+            }
+
+            if (md.isConstructor() && md.getParameters().size() == 1 &&
+                md.getParameters().get(0) instanceof J.VariableDeclarations &&
+                TypeUtils.isString(((J.VariableDeclarations) md.getParameters().get(0)).getType())) {
+                J.ClassDeclaration owner = getCursor().firstEnclosingOrThrow(J.ClassDeclaration.class);
+                J.VariableDeclarations parameter = (J.VariableDeclarations) md.getParameters().get(0);
+                AtomicBoolean nameUsed = new AtomicBoolean();
+                new JavaIsoVisitor<AtomicBoolean>() {
+                    @Override
+                    public J.Identifier visitIdentifier(J.Identifier identifier, AtomicBoolean used) {
+                        if (parameter.getVariables().get(0).getSimpleName().equals(identifier.getSimpleName())) {
+                            used.set(true);
+                        }
+                        return identifier;
+                    }
+                }.visit(md.getBody(), nameUsed);
+                long constructors = owner.getBody().getStatements().stream()
+                        .filter(J.MethodDeclaration.class::isInstance)
+                        .map(J.MethodDeclaration.class::cast)
+                        .filter(J.MethodDeclaration::isConstructor)
+                        .count();
+                if (!nameUsed.get() && constructors == 1 && owner.getExtends() != null &&
+                    TypeUtils.isOfClassType(owner.getExtends().getType(), "junit.framework.TestCase") &&
+                    md.getMethodType() != null &&
+                    !referencedConstructors.contains(md.getMethodType().getDeclaringType().getFullyQualifiedName())) {
+                    md = md.withParameters(emptyList())
+                            .withMethodType(md.getMethodType().withParameterNames(emptyList()).withParameterTypes(emptyList()));
+                } else {
+                    md = SearchResult.found(md, "JUnit Jupiter cannot resolve this String constructor parameter; migrate the test name and constructor callers manually");
+                }
             }
 
             // Remove suite() methods that return junit.framework.Test or TestSuite

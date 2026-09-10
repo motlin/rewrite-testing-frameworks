@@ -363,7 +363,7 @@ class MigrateJUnitTestCaseTest implements RewriteTest {
     }
 
     @Test
-    void constructorWithAdditionalStatementsIsKept() {
+    void constructorUsingTestNameRequiresManualMigration() {
         //language=java
         rewriteRun(
           java(
@@ -381,8 +381,281 @@ class MigrateJUnitTestCaseTest implements RewriteTest {
             """
               public class AppTest {
                   private final String name;
-                  public AppTest(String testName) {
+                  /*~~(JUnit Jupiter cannot resolve this String constructor parameter; migrate the test name and constructor callers manually)~~>*/public AppTest(String testName) {
                       this.name = testName;
+                  }
+              }
+              """
+          )
+        );
+    }
+
+    @Test
+    void preservesPerInstanceInitializationWithoutTestNameParameter() {
+        rewriteRun(
+          //language=java
+          java(
+            """
+              import junit.framework.TestCase;
+
+              public class MathTest extends TestCase {
+                  private boolean initialized;
+
+                  public MathTest(String testName) {
+                      super(testName);
+                      initialized = true;
+                  }
+
+                  public void testAdd() {
+                      assertTrue(initialized);
+                  }
+              }
+              """,
+            """
+              import org.junit.jupiter.api.Test;
+
+              import static org.junit.jupiter.api.Assertions.assertTrue;
+
+              public class MathTest {
+                  private boolean initialized;
+
+                  public MathTest() {
+                      initialized = true;
+                  }
+
+                  @Test
+                  public void testAdd() {
+                      assertTrue(initialized);
+                  }
+              }
+              """
+          )
+        );
+    }
+
+    @Test
+    void preservesFinalFieldInitializationBeforeSetUp() {
+        rewriteRun(
+          //language=java
+          java(
+            """
+              import junit.framework.TestCase;
+
+              public class MathTest extends TestCase {
+                  private final StringBuilder log;
+
+                  public MathTest(String testName) {
+                      super(testName);
+                      log = new StringBuilder("constructed");
+                      log.append(":initialized");
+                  }
+
+                  @Override
+                  protected void setUp() {
+                      log.append(":setUp");
+                  }
+
+                  public void testLog() {
+                      assertEquals("constructed:initialized:setUp", log.toString());
+                  }
+              }
+              """,
+            """
+              import org.junit.jupiter.api.BeforeEach;
+              import org.junit.jupiter.api.Test;
+
+              import static org.junit.jupiter.api.Assertions.assertEquals;
+
+              public class MathTest {
+                  private final StringBuilder log;
+
+                  public MathTest() {
+                      log = new StringBuilder("constructed");
+                      log.append(":initialized");
+                  }
+
+                  @BeforeEach
+                  public void setUp() {
+                      log.append(":setUp");
+                  }
+
+                  @Test
+                  public void testLog() {
+                      assertEquals("constructed:initialized:setUp", log.toString());
+                  }
+              }
+              """
+          )
+        );
+    }
+
+    @Test
+    void reportsFinalFieldInitializationUsingTestName() {
+        rewriteRun(
+          //language=java
+          java(
+            """
+              import junit.framework.TestCase;
+
+              public class MathTest extends TestCase {
+                  private final StringBuilder log;
+
+                  public MathTest(String name) {
+                      super(name);
+                      log = new StringBuilder("constructed:" + name);
+                  }
+
+                  public void testLog() {
+                      assertTrue(log.length() > 0);
+                  }
+              }
+              """,
+            """
+              import org.junit.jupiter.api.Test;
+
+              import static org.junit.jupiter.api.Assertions.assertTrue;
+
+              public class MathTest {
+                  private final StringBuilder log;
+
+                  /*~~(JUnit Jupiter cannot resolve this String constructor parameter; migrate the test name and constructor callers manually)~~>*/public MathTest(String name) {
+                      log = new StringBuilder("constructed:" + name);
+                  }
+
+                  @Test
+                  public void testLog() {
+                      assertTrue(log.length() > 0);
+                  }
+              }
+              """
+          )
+        );
+    }
+
+    @Test
+    void retainsConstructorWithCallersInAnotherSourceFile() {
+        rewriteRun(
+          //language=java
+          java(
+            """
+              import junit.framework.TestCase;
+
+              public class MathTest extends TestCase {
+                  private final boolean initialized;
+
+                  public MathTest(String name) {
+                      super(name);
+                      initialized = true;
+                  }
+              }
+              """,
+            """
+              public class MathTest {
+                  private final boolean initialized;
+
+                  /*~~(JUnit Jupiter cannot resolve this String constructor parameter; migrate the test name and constructor callers manually)~~>*/public MathTest(String name) {
+                      initialized = true;
+                  }
+              }
+              """
+          ),
+          //language=java
+          java(
+            """
+              class TestFactory {
+                  MathTest create() {
+                      return new MathTest("testAdd");
+                  }
+              }
+              """
+          )
+        );
+    }
+
+    @Test
+    void retainsConstructorUsedByMethodReference() {
+        rewriteRun(
+          //language=java
+          java(
+            """
+              import junit.framework.TestCase;
+              import java.util.function.Function;
+
+              public class MathTest extends TestCase {
+                  private final boolean initialized;
+                  static final Function<String, MathTest> FACTORY = MathTest::new;
+
+                  public MathTest(String name) {
+                      super(name);
+                      initialized = true;
+                  }
+              }
+              """,
+            """
+              import java.util.function.Function;
+
+              public class MathTest {
+                  private final boolean initialized;
+                  static final Function<String, MathTest> FACTORY = MathTest::new;
+
+                  /*~~(JUnit Jupiter cannot resolve this String constructor parameter; migrate the test name and constructor callers manually)~~>*/public MathTest(String name) {
+                      initialized = true;
+                  }
+              }
+              """
+          )
+        );
+    }
+
+    @Test
+    void doesNotCreateConflictingNoArgumentConstructor() {
+        rewriteRun(
+          //language=java
+          java(
+            """
+              import junit.framework.TestCase;
+
+              public class MathTest extends TestCase {
+                  private final boolean initialized;
+
+                  public MathTest() {
+                      initialized = false;
+                  }
+
+                  public MathTest(String name) {
+                      super(name);
+                      initialized = true;
+                  }
+              }
+              """,
+            """
+              public class MathTest {
+                  private final boolean initialized;
+
+                  public MathTest() {
+                      initialized = false;
+                  }
+
+                  /*~~(JUnit Jupiter cannot resolve this String constructor parameter; migrate the test name and constructor callers manually)~~>*/public MathTest(String name) {
+                      initialized = true;
+                  }
+              }
+              """
+          )
+        );
+    }
+
+    @Test
+    void unrelatedStringConstructorIsUnchanged() {
+        rewriteRun(
+          //language=java
+          java(
+            """
+              class MathTest {
+                  private final boolean initialized;
+
+                  public MathTest(String name) {
+                      initialized = true;
                   }
               }
               """
