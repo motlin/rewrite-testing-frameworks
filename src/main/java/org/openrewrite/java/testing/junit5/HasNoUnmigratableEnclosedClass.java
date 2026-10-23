@@ -48,7 +48,7 @@ public class HasNoUnmigratableEnclosedClass extends Recipe {
         };
     }
 
-    private static boolean declaresUnmigratableEnclosedClass(J.CompilationUnit cu) {
+    static boolean declaresUnmigratableEnclosedClass(J.CompilationUnit cu) {
         return new JavaIsoVisitor<AtomicBoolean>() {
             @Override
             public J.ClassDeclaration visitClassDeclaration(J.ClassDeclaration classDecl, AtomicBoolean declares) {
