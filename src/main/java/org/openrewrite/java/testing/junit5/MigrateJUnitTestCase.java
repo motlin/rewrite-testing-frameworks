@@ -26,7 +26,6 @@ import org.openrewrite.Tree;
 import org.openrewrite.TreeVisitor;
 import org.openrewrite.internal.ListUtils;
 import org.openrewrite.java.AnnotationMatcher;
-import org.openrewrite.java.ChangeType;
 import org.openrewrite.java.DeleteMethodArgument;
 import org.openrewrite.java.JavaIsoVisitor;
 import org.openrewrite.java.JavaParser;
@@ -47,6 +46,7 @@ import org.openrewrite.java.tree.JavaType;
 import org.openrewrite.java.tree.Space;
 import org.openrewrite.java.tree.Statement;
 import org.openrewrite.java.tree.TextComment;
+import org.openrewrite.java.tree.TypeTree;
 import org.openrewrite.java.tree.TypeUtils;
 import org.openrewrite.marker.Markers;
 import org.openrewrite.marker.SearchResult;
@@ -644,9 +644,9 @@ public class MigrateJUnitTestCase extends ScanningRecipe<MigrateJUnitTestCase.Ac
                         }
                         J.CompilationUnit c = super.visitCompilationUnit(cu, ctx);
                         doAfterVisit(new TestCaseVisitor(redundant, acc, project));
-                        // ChangeType for org.junit.Assert method invocations because TestCase extends org.junit.Assert
-                        doAfterVisit(new ChangeType("junit.framework.TestCase", "org.junit.Assert", true).getVisitor());
-                        doAfterVisit(new ChangeType("junit.framework.Assert", "org.junit.Assert", true).getVisitor());
+                        // Retarget JUnit 3 static assertions to org.junit.Assert; other references such as TestCase.class
+                        // keep their meaning
+                        doAfterVisit(new JUnit3AssertionsToAssert());
                         doAfterVisit(new AssertToAssertions.AssertToAssertionsVisitor());
                         doAfterVisit(new UseStaticImport("org.junit.jupiter.api.Assertions assert*(..)").getVisitor());
                         doAfterVisit(new UseStaticImport("org.junit.jupiter.api.Assertions fail*(..)").getVisitor());
@@ -691,6 +691,82 @@ public class MigrateJUnitTestCase extends ScanningRecipe<MigrateJUnitTestCase.Ac
                         return mi;
                     }
                 });
+    }
+
+    /**
+     * Moves static assertion calls, static imports, and `extends Assert` from the JUnit 3 `junit.framework.TestCase`
+     * and `junit.framework.Assert` to `org.junit.Assert`, leaving every other reference to those types alone.
+     */
+    private static class JUnit3AssertionsToAssert extends JavaIsoVisitor<ExecutionContext> {
+        private static final List<String> JUNIT3_ASSERTION_TYPES = asList("junit.framework.TestCase", "junit.framework.Assert");
+        private static final String ASSERT = "org.junit.Assert";
+        private static final JavaType.FullyQualified ASSERT_TYPE = JavaType.ShallowClass.build(ASSERT);
+
+        @Override
+        public J.Import visitImport(J.Import anImport, ExecutionContext ctx) {
+            J.Import i = super.visitImport(anImport, ctx);
+            if (i.isStatic() && JUNIT3_ASSERTION_TYPES.contains(i.getTypeName())) {
+                return i.withQualid(TypeTree.build(ASSERT + "." + i.getQualid().getSimpleName())
+                        .withPrefix(i.getQualid().getPrefix()));
+            }
+            return i;
+        }
+
+        @Override
+        public J.ClassDeclaration visitClassDeclaration(J.ClassDeclaration classDecl, ExecutionContext ctx) {
+            J.ClassDeclaration cd = super.visitClassDeclaration(classDecl, ctx);
+            if (cd.getExtends() != null && TypeUtils.isOfClassType(cd.getExtends().getType(), "junit.framework.Assert")) {
+                cd = cd.withExtends(null);
+                maybeRemoveImport("junit.framework.Assert");
+            }
+            // Later recipes would otherwise see the inherited JUnit 3 assertions as methods that shadow the Jupiter ones
+            return cd.getType() instanceof JavaType.Class ? cd.withType(withoutJUnit3Ancestors(cd.getType())) : cd;
+        }
+
+        private static JavaType.@Nullable FullyQualified withoutJUnit3Ancestors(JavaType.@Nullable FullyQualified type) {
+            if (type == null) {
+                return null;
+            }
+            if (type.getFullyQualifiedName().startsWith("junit.framework.")) {
+                return withoutJUnit3Ancestors(type.getSupertype());
+            }
+            if (!(type instanceof JavaType.Class)) {
+                return type;
+            }
+            JavaType.FullyQualified supertype = type.getSupertype();
+            JavaType.FullyQualified stripped = withoutJUnit3Ancestors(supertype);
+            return stripped == supertype ? type : ((JavaType.Class) type).withSupertype(stripped);
+        }
+
+        @Override
+        public J.MethodInvocation visitMethodInvocation(J.MethodInvocation method, ExecutionContext ctx) {
+            J.MethodInvocation m = super.visitMethodInvocation(method, ctx);
+            JavaType.Method type = m.getMethodType();
+            String declaringType = junit3AssertionType(type == null ? null : type.getDeclaringType());
+            if (type == null || declaringType == null || !type.hasFlags(Flag.Static)) {
+                return m;
+            }
+            JavaType.Method retargeted = type.withDeclaringType(ASSERT_TYPE);
+            m = m.withMethodType(retargeted).withName(m.getName().withType(retargeted));
+            String selectType = m.getSelect() == null ? null : junit3AssertionType(m.getSelect().getType());
+            if (selectType != null) {
+                m = m.withSelect(new J.Identifier(Tree.randomId(), m.getSelect().getPrefix(), Markers.EMPTY, emptyList(),
+                        "Assert", ASSERT_TYPE, null));
+                maybeAddImport(ASSERT);
+                maybeRemoveImport(selectType);
+            }
+            maybeRemoveImport(declaringType);
+            return m;
+        }
+
+        private static @Nullable String junit3AssertionType(@Nullable JavaType type) {
+            for (String candidate : JUNIT3_ASSERTION_TYPES) {
+                if (TypeUtils.isOfClassType(type, candidate)) {
+                    return candidate;
+                }
+            }
+            return null;
+        }
     }
 
     /**
