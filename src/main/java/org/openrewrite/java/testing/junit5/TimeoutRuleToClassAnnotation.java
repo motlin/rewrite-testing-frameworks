@@ -88,16 +88,16 @@ public class TimeoutRuleToClassAnnotation extends Recipe {
                 if (TIMEOUT_CONSTRUCTOR_MATCHER.matches(ex)) {
                     List<Expression> arguments = ((J.NewClass) ex).getArguments();
                     if (arguments.size() == 2) {
-                        template = "@Timeout(value = #{any(long)}, unit = #{any(java.util.concurrent.TimeUnit)})";
+                        template = "@Timeout(value = #{any(long)}, unit = #{any(java.util.concurrent.TimeUnit)}, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)";
                         params = new Object[]{arguments.get(0), arguments.get(1)};
                     } else {
-                        template = "@Timeout(value = #{any(long)}, unit = TimeUnit.MILLISECONDS)";
+                        template = "@Timeout(value = #{any(long)}, unit = TimeUnit.MILLISECONDS, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)";
                         params = new Object[]{arguments.get(0)};
                     }
                 } else if (MILLIS_SECONDS_MATCHER.matches(ex)) {
                     String simpleName = ((J.MethodInvocation) ex).getSimpleName();
                     String units = "millis".equals(simpleName) ? "MILLISECONDS" : "SECONDS";
-                    template = "@Timeout(value = #{any(long)}, unit = TimeUnit." + units + ")";
+                    template = "@Timeout(value = #{any(long)}, unit = TimeUnit." + units + ", threadMode = Timeout.ThreadMode.SEPARATE_THREAD)";
                     params = new Object[]{((J.MethodInvocation) ex).getArguments().get(0)};
                 } else {
                     return cd;
