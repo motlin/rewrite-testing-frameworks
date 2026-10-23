@@ -38,7 +38,8 @@ import static java.util.Collections.emptyList;
 @Value
 @EqualsAndHashCode(callSuper = false)
 public class EnclosedToNested extends Recipe {
-    private static final String ENCLOSED = "org.junit.experimental.runners.Enclosed";
+    static final String ENCLOSED = "org.junit.experimental.runners.Enclosed";
+    static final String MANUAL_MIGRATION_MESSAGE = "Neither @Nested nor independent classes preserve both the per-test and the class-level setup of this Enclosed class; migrate it manually";
     private static final String RUN_WITH = "org.junit.runner.RunWith";
     private static final String RUN_WITH_ENCLOSED = String.format("@%s(%s.class)", RUN_WITH, ENCLOSED);
     private static final AnnotationMatcher RUN_WITH_ENCLOSED_MATCHER = new AnnotationMatcher(RUN_WITH_ENCLOSED);
@@ -68,15 +69,13 @@ public class EnclosedToNested extends Recipe {
             @Override
             public J.ClassDeclaration visitClassDeclaration(J.ClassDeclaration classDecl, ExecutionContext ctx) {
                 J.ClassDeclaration cd = super.visitClassDeclaration(classDecl, ctx);
-                if (cd.getLeadingAnnotations().stream().noneMatch(RUN_WITH_ENCLOSED_MATCHER::matches)) {
+                if (!isEnclosed(cd)) {
                     return cd;
                 }
-                boolean hasPerTestSetup = hasPerTestLifecycleMethod(cd) || hasInstanceRule(cd);
-                if (hasPerTestSetup && hasClassLevelLifecycleMember(cd)) {
-                    // @Nested classes would inherit the per-test setup, while independent classes
-                    // would lose the class-level setup that the Enclosed suite ran around them.
-                    return SearchResult.found(cd, "Neither @Nested nor independent classes preserve both the per-test and the class-level setup of this Enclosed class; migrate it manually");
+                if (isUnmigratable(cd)) {
+                    return SearchResult.found(cd, MANUAL_MIGRATION_MESSAGE);
                 }
+                boolean hasPerTestSetup = hasPerTestSetup(cd);
                 maybeRemoveImport(ENCLOSED);
                 maybeRemoveImport(RUN_WITH);
                 cd = (J.ClassDeclaration) new RemoveAnnotationVisitor(RUN_WITH_ENCLOSED_MATCHER)
@@ -92,6 +91,23 @@ public class EnclosedToNested extends Recipe {
                 return cd;
             }
         });
+    }
+
+    static boolean isEnclosed(J.ClassDeclaration cd) {
+        return cd.getLeadingAnnotations().stream().anyMatch(RUN_WITH_ENCLOSED_MATCHER::matches);
+    }
+
+    /**
+     * An Enclosed class with both per-test and class-level setup cannot be migrated: {@code @Nested} classes would
+     * inherit the per-test setup, while independent classes would lose the class-level setup that the Enclosed suite
+     * ran around them.
+     */
+    static boolean isUnmigratable(J.ClassDeclaration cd) {
+        return isEnclosed(cd) && hasPerTestSetup(cd) && hasClassLevelLifecycleMember(cd);
+    }
+
+    private static boolean hasPerTestSetup(J.ClassDeclaration cd) {
+        return hasPerTestLifecycleMethod(cd) || hasInstanceRule(cd);
     }
 
     private static boolean hasPerTestLifecycleMethod(J.ClassDeclaration cd) {
