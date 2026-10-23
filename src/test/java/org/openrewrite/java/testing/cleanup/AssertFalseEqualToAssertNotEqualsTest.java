@@ -101,6 +101,54 @@ class AssertFalseEqualToAssertNotEqualsTest implements RewriteTest {
         );
     }
 
+    @SuppressWarnings({"ConstantConditions", "SimplifiableAssertion"})
+    @Test
+    void preserveEqualsReceiverForAsymmetricEquals() {
+        //language=java
+        rewriteRun(
+          java(
+            """
+              import static org.junit.jupiter.api.Assertions.assertFalse;
+
+              public class Test {
+                  static class Lenient {
+                      @Override
+                      public boolean equals(Object other) {
+                          return other != null;
+                      }
+                  }
+
+                  void test() {
+                      Lenient receiver = new Lenient();
+                      Object argument = new Object();
+                      assertFalse(receiver.equals(argument));
+                      assertFalse(argument.equals(receiver), "message");
+                  }
+              }
+              """,
+            """
+              import static org.junit.jupiter.api.Assertions.assertNotEquals;
+
+              public class Test {
+                  static class Lenient {
+                      @Override
+                      public boolean equals(Object other) {
+                          return other != null;
+                      }
+                  }
+
+                  void test() {
+                      Lenient receiver = new Lenient();
+                      Object argument = new Object();
+                      assertNotEquals(receiver, argument);
+                      assertNotEquals(argument, receiver, "message");
+                  }
+              }
+              """
+          )
+        );
+    }
+
     @SuppressWarnings("ConstantConditions")
     @Test
     void retainEqualsAndedWithSomethingElse() {
