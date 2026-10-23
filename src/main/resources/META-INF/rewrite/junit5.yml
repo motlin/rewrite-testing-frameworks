@@ -121,13 +121,7 @@ recipeList:
   - org.openrewrite.java.testing.junit5.UseMockitoExtension
   - org.openrewrite.java.testing.hamcrest.AddHamcrestIfUsed
   - org.openrewrite.java.testing.junit5.UseXMLUnitLegacy
-  - org.openrewrite.java.dependencies.RemoveDependency:
-      groupId: junit
-      artifactId: junit
-  - org.openrewrite.maven.RemoveManagedDependency:
-      groupId: junit
-      artifactId: junit
-  - org.openrewrite.java.testing.junit5.ExcludeJUnit4UnlessUsingTestcontainers
+  - org.openrewrite.java.testing.junit5.RemoveJUnit4DependencyUnlessLaunched
   - org.openrewrite.java.dependencies.RemoveDependency:
       groupId: org.junit.vintage
       artifactId: junit-vintage-engine
@@ -166,6 +160,23 @@ recipeList:
   - org.openrewrite.java.testing.junit5.AddJupiterMigrationSupport
   # Flag rules no recipe above converted, as JUnit Jupiter would silently skip them
   - org.openrewrite.java.testing.junit5.FindLeftoverJUnit4Rules
+---
+type: specs.openrewrite.org/v1beta/recipe
+name: org.openrewrite.java.testing.junit5.RemoveJUnit4DependencyUnlessLaunched
+displayName: Remove JUnit 4, unless the module launches JUnit 4 tests
+description: >-
+  Removes and excludes `junit:junit` in modules that do not run tests with `JUnitCore` or `Request`,
+  as the launcher and the classes it runs stay on JUnit 4.
+preconditions:
+  - org.openrewrite.java.testing.junit5.ModuleHasNoJUnit4Launcher
+recipeList:
+  - org.openrewrite.java.dependencies.RemoveDependency:
+      groupId: junit
+      artifactId: junit
+  - org.openrewrite.maven.RemoveManagedDependency:
+      groupId: junit
+      artifactId: junit
+  - org.openrewrite.java.testing.junit5.ExcludeJUnit4UnlessUsingTestcontainers
 ---
 type: specs.openrewrite.org/v1beta/recipe
 name: org.openrewrite.java.testing.junit5.ExcludeJUnit4UnlessUsingTestcontainers
