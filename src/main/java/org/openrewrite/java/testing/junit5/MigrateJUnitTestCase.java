@@ -64,6 +64,8 @@ public class MigrateJUnitTestCase extends ScanningRecipe<MigrateJUnitTestCase.Ac
     private static final AnnotationMatcher JUNIT_TEST_ANNOTATION_MATCHER = new AnnotationMatcher("@org.junit.Test");
     private static final AnnotationMatcher JUNIT_AFTER_ANNOTATION_MATCHER = new AnnotationMatcher("@org.junit.*After*");
     private static final AnnotationMatcher JUNIT_BEFORE_ANNOTATION_MATCHER = new AnnotationMatcher("@org.junit.*Before*");
+    private static final AnnotationMatcher JUNIT_BEFORE_CLASS_ANNOTATION_MATCHER = new AnnotationMatcher("@org.junit.BeforeClass");
+    private static final AnnotationMatcher JUNIT_AFTER_CLASS_ANNOTATION_MATCHER = new AnnotationMatcher("@org.junit.AfterClass");
     private static final MethodMatcher TEST_CASE_RUN_MATCHER = new MethodMatcher("junit.framework.TestCase run(junit.framework.TestResult)", true);
     private static final MethodMatcher SET_NAME_MATCHER = new MethodMatcher("junit.framework.TestCase setName(String)");
     private static final MethodMatcher SET_UP_MATCHER = new MethodMatcher("junit.framework.TestCase setUp()");
@@ -1006,6 +1008,10 @@ public class MigrateJUnitTestCase extends ScanningRecipe<MigrateJUnitTestCase.Ac
                 return null;
             }
 
+            // JUnit 3 ignores @BeforeClass and @AfterClass, so converting them would start running methods that never ran
+            md = removeAnnotation(md, JUNIT_BEFORE_CLASS_ANNOTATION_MATCHER, "org.junit.BeforeClass", ctx);
+            md = removeAnnotation(md, JUNIT_AFTER_CLASS_ANNOTATION_MATCHER, "org.junit.AfterClass", ctx);
+
             if (md.getSimpleName().startsWith("test") && md.getLeadingAnnotations().stream().noneMatch(JUNIT_TEST_ANNOTATION_MATCHER::matches)) {
                 md = updateMethodDeclarationAnnotationAndModifier(md, "@Test", "org.junit.jupiter.api.Test", ctx);
             } else if ("setUp".equals(md.getSimpleName()) && md.getLeadingAnnotations().stream().noneMatch(JUNIT_BEFORE_ANNOTATION_MATCHER::matches)) {
@@ -1049,16 +1055,23 @@ public class MigrateJUnitTestCase extends ScanningRecipe<MigrateJUnitTestCase.Ac
             return md.withModifiers(modifiers);
         }
 
+        private J.MethodDeclaration removeAnnotation(J.MethodDeclaration md, AnnotationMatcher matcher, String fullyQualifiedAnnotation, ExecutionContext ctx) {
+            if (md.getLeadingAnnotations().stream().noneMatch(matcher::matches)) {
+                return md;
+            }
+            maybeRemoveImport(fullyQualifiedAnnotation);
+            J.MethodDeclaration withoutBody = (J.MethodDeclaration) new RemoveAnnotationVisitor(matcher)
+                    .visitNonNull(md.withBody(null), ctx, getCursor().getParentOrThrow());
+            return withoutBody.withBody(md.getBody());
+        }
+
         private J.MethodDeclaration maybeRemoveOverrideAnnotation(J.MethodDeclaration md, ExecutionContext ctx) {
             JavaType.Method methodType = md.getMethodType();
             if (methodType == null ||
-                md.getLeadingAnnotations().stream().noneMatch(OVERRIDE_ANNOTATION_MATCHER::matches) ||
                 stillOverridesAfterMigration(methodType)) {
                 return md;
             }
-            J.MethodDeclaration withoutBody = (J.MethodDeclaration) new RemoveAnnotationVisitor(OVERRIDE_ANNOTATION_MATCHER)
-                    .visitNonNull(md.withBody(null), ctx, getCursor().getParentOrThrow());
-            return withoutBody.withBody(md.getBody());
+            return removeAnnotation(md, OVERRIDE_ANNOTATION_MATCHER, "java.lang.Override", ctx);
         }
 
         private static boolean stillOverridesAfterMigration(JavaType.Method method) {
