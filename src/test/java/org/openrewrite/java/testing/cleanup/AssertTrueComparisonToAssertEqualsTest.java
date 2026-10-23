@@ -193,14 +193,14 @@ class AssertTrueComparisonToAssertEqualsTest implements RewriteTest {
 
               public class Test {
                   void test() {
-                      Map<String, Double> map = new HashMap<>();
-                      map.put("k", 0.5);
-                      double d = 0.5;
+                      Map<String, Long> map = new HashMap<>();
+                      map.put("k", 5L);
+                      long l = 5L;
                       int i = 5;
                       Integer iBoxed = 5;
-                      Double a = 0.5;
-                      Double b = a;
-                      Assertions.assertTrue(map.get("k") == d);
+                      Long a = 5L;
+                      Long b = a;
+                      Assertions.assertTrue(map.get("k") == l);
                       Assertions.assertTrue(i == iBoxed);
                       Assertions.assertTrue(a == b);
                   }
@@ -214,16 +214,67 @@ class AssertTrueComparisonToAssertEqualsTest implements RewriteTest {
 
               public class Test {
                   void test() {
-                      Map<String, Double> map = new HashMap<>();
-                      map.put("k", 0.5);
-                      double d = 0.5;
+                      Map<String, Long> map = new HashMap<>();
+                      map.put("k", 5L);
+                      long l = 5L;
                       int i = 5;
                       Integer iBoxed = 5;
-                      Double a = 0.5;
-                      Double b = a;
-                      Assertions.assertEquals(map.get("k"), d);
+                      Long a = 5L;
+                      Long b = a;
+                      Assertions.assertEquals(map.get("k"), l);
                       Assertions.assertEquals(i, iBoxed);
                       Assertions.assertTrue(a == b);
+                  }
+              }
+              """
+          )
+        );
+    }
+    @SuppressWarnings("SimplifiableAssertion")
+    @Test
+    void doNotChangeDoubleComparison() {
+        // assertEquals on doubles treats NaN as equal to NaN and 0.0 as unequal to -0.0, unlike ==.
+        //language=java
+        rewriteRun(
+          java(
+            """
+              import org.junit.jupiter.api.Assertions;
+
+              public class Test {
+                  void test() {
+                      double a = 0.0;
+                      double b = -0.0;
+                      Double boxed = 0.0;
+                      Assertions.assertTrue(a == b);
+                      Assertions.assertTrue(a == boxed);
+                      Assertions.assertTrue(boxed == b);
+                      Assertions.assertTrue(a == 1);
+                  }
+              }
+              """
+          )
+        );
+    }
+
+    @SuppressWarnings("SimplifiableAssertion")
+    @Test
+    void doNotChangeFloatComparison() {
+        // assertEquals on floats treats NaN as equal to NaN and 0.0f as unequal to -0.0f, unlike ==.
+        //language=java
+        rewriteRun(
+          java(
+            """
+              import org.junit.jupiter.api.Assertions;
+
+              public class Test {
+                  void test() {
+                      float a = 0.0f;
+                      float b = -0.0f;
+                      Float boxed = 0.0f;
+                      Assertions.assertTrue(a == b);
+                      Assertions.assertTrue(a == boxed);
+                      Assertions.assertTrue(boxed == b);
+                      Assertions.assertTrue(1 == a);
                   }
               }
               """

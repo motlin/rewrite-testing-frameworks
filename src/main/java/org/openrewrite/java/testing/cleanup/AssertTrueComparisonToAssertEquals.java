@@ -106,6 +106,10 @@ public class AssertTrueComparisonToAssertEquals extends Recipe {
                 //   - one operand is primitive and the other a numeric wrapper (Java unboxes; == is value).
                 JavaType leftType = binary.getLeft().getType();
                 JavaType rightType = binary.getRight().getType();
+                // assertEquals on float/double treats NaN as equal to NaN and 0.0 as unequal to -0.0, unlike ==.
+                if (isFloatingPoint(leftType) || isFloatingPoint(rightType)) {
+                    return false;
+                }
                 if (leftType instanceof JavaType.Primitive && rightType instanceof JavaType.Primitive) {
                     return !(leftType == JavaType.Primitive.String && rightType == JavaType.Primitive.String);
                 }
@@ -122,14 +126,19 @@ public class AssertTrueComparisonToAssertEquals extends Recipe {
                type != JavaType.Primitive.None;
     }
 
+    private static boolean isFloatingPoint(JavaType type) {
+        return type == JavaType.Primitive.Float ||
+               type == JavaType.Primitive.Double ||
+               TypeUtils.isOfClassType(type, "java.lang.Float") ||
+               TypeUtils.isOfClassType(type, "java.lang.Double");
+    }
+
     private static boolean isNumericWrapper(JavaType type) {
         return TypeUtils.isOfClassType(type, "java.lang.Boolean") ||
                TypeUtils.isOfClassType(type, "java.lang.Byte") ||
                TypeUtils.isOfClassType(type, "java.lang.Character") ||
                TypeUtils.isOfClassType(type, "java.lang.Short") ||
                TypeUtils.isOfClassType(type, "java.lang.Integer") ||
-               TypeUtils.isOfClassType(type, "java.lang.Long") ||
-               TypeUtils.isOfClassType(type, "java.lang.Float") ||
-               TypeUtils.isOfClassType(type, "java.lang.Double");
+               TypeUtils.isOfClassType(type, "java.lang.Long");
     }
 }
