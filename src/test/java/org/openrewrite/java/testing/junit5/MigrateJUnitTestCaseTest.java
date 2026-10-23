@@ -211,6 +211,58 @@ class MigrateJUnitTestCaseTest implements RewriteTest {
     }
 
     @Test
+    void keepTestCaseClassLiteral() {
+        //language=java
+        rewriteRun(
+          java(
+            """
+              import junit.framework.TestCase;
+
+              class SuiteBuilder {
+                  boolean isJUnit3Test(Class<?> c) {
+                      if (TestCase.class.isAssignableFrom(c)) {
+                          return true;
+                      }
+                      return false;
+                  }
+              }
+              """
+          )
+        );
+    }
+
+    @Test
+    void keepTestCaseTypeReferencesWhileMigratingAssertions() {
+        //language=java
+        rewriteRun(
+          java(
+            """
+              import junit.framework.TestCase;
+
+              class SuiteBuilder {
+                  boolean isJUnit3Test(Class<?> c, TestCase test) {
+                      TestCase.assertNotNull(test);
+                      return TestCase.class.isAssignableFrom(c);
+                  }
+              }
+              """,
+            """
+              import junit.framework.TestCase;
+
+              import static org.junit.jupiter.api.Assertions.assertNotNull;
+
+              class SuiteBuilder {
+                  boolean isJUnit3Test(Class<?> c, TestCase test) {
+                      assertNotNull(test);
+                      return TestCase.class.isAssignableFrom(c);
+                  }
+              }
+              """
+          )
+        );
+    }
+
+    @Test
     void notTestCaseHasTestCaseAssertion() {
         //language=java
         rewriteRun(
