@@ -55,6 +55,7 @@ preconditions:
       groupIdPattern: org.testng
       artifactIdPattern: testng*
       invertMarking: true
+  - org.openrewrite.java.testing.junit5.IsNotRunByJUnit4Launcher
 recipeList:
   - org.openrewrite.java.testing.junit5.MigrateSystemRules
   - org.openrewrite.java.testing.junit5.WireMockRuleToWireMockServer

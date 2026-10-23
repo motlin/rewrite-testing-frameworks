@@ -1822,4 +1822,103 @@ class JUnit5MigrationTest implements RewriteTest {
           )
         );
     }
+
+    @Test
+    void skipClassesRunByJUnitCore() {
+        //language=java
+        rewriteRun(
+          java(
+            """
+              import org.junit.runner.JUnitCore;
+
+              public class Launcher {
+                  public static void main(String[] args) {
+                      JUnitCore.runClasses(FooTest.class);
+                  }
+              }
+              """
+          ),
+          java(
+            """
+              import org.junit.Test;
+
+              import static org.junit.Assert.assertTrue;
+
+              public class FooTest {
+                  @Test
+                  public void test() {
+                      assertTrue(true);
+                  }
+              }
+              """
+          ),
+          java(
+            """
+              import org.junit.Test;
+
+              public class BarTest {
+                  @Test
+                  public void test() {
+                  }
+              }
+              """,
+            """
+              import org.junit.jupiter.api.Test;
+
+              public class BarTest {
+                  @Test
+                  public void test() {
+                  }
+              }
+              """
+          )
+        );
+    }
+
+    @Test
+    void skipClassesRunByRequest() {
+        //language=java
+        rewriteRun(
+          java(
+            """
+              import com.example.Outer;
+              import org.junit.runner.JUnitCore;
+              import org.junit.runner.Request;
+
+              public class Launcher {
+                  public static void main(String[] args) {
+                      new JUnitCore().run(Request.method(FooTest.class, "test"));
+                      new JUnitCore().run(Request.classes(Outer.BarTest.class));
+                  }
+              }
+              """
+          ),
+          java(
+            """
+              import org.junit.Test;
+
+              public class FooTest {
+                  @Test
+                  public void test() {
+                  }
+              }
+              """
+          ),
+          java(
+            """
+              package com.example;
+
+              import org.junit.Test;
+
+              public class Outer {
+                  public static class BarTest {
+                      @Test
+                      public void test() {
+                      }
+                  }
+              }
+              """
+          )
+        );
+    }
 }
