@@ -199,7 +199,7 @@ class SystemRulesMigrationTest implements RewriteTest {
 
                   class GreeterTest {
                       // TODO Migrate by hand to System Stubs: this rule is used in a way that has no direct System Stubs equivalent.
-                      @Rule
+                      /*~~(JUnit Jupiter does not run JUnit 4 rule `SystemOutRule`; migrate it to an extension manually)~~>*/@Rule
                       public final SystemOutRule out = new SystemOutRule().enableLog();
 
                       @Test

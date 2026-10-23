@@ -1818,6 +1818,19 @@ class JUnit5MigrationTest implements RewriteTest {
                   void test() {
                   }
               }
+              """,
+            """
+              import org.junit.Rule;
+              import org.junit.jupiter.api.Test;
+
+              class JupiterTest {
+                  /*~~(JUnit Jupiter does not run JUnit 4 rule `Server`; migrate it to an extension manually)~~>*/@Rule
+                  public Server server = new Server();
+
+                  @Test
+                  void test() {
+                  }
+              }
               """
           )
         );
