@@ -26,10 +26,13 @@ import org.openrewrite.java.JavaIsoVisitor;
 import org.openrewrite.java.RemoveAnnotationVisitor;
 import org.openrewrite.java.search.UsesType;
 import org.openrewrite.java.tree.J;
+import org.openrewrite.java.tree.Statement;
 import org.openrewrite.java.tree.TypeUtils;
 
 import java.util.Arrays;
 import java.util.List;
+
+import static java.util.Collections.emptyList;
 
 @Value
 @EqualsAndHashCode(callSuper = false)
@@ -43,6 +46,10 @@ public class EnclosedToNested extends Recipe {
             "org.junit.After",
             "org.junit.jupiter.api.BeforeEach",
             "org.junit.jupiter.api.AfterEach");
+    private static final List<String> PER_INSTANCE_MEMBER_ANNOTATIONS = Arrays.asList(
+            "org.junit.Rule",
+            "org.junit.jupiter.api.io.TempDir",
+            "org.junit.jupiter.api.extension.RegisterExtension");
 
     String displayName = "JUnit 4 `@RunWith(Enclosed.class)` to JUnit Jupiter `@Nested`";
 
@@ -61,9 +68,9 @@ public class EnclosedToNested extends Recipe {
                 maybeRemoveImport(RUN_WITH);
                 cd = (J.ClassDeclaration) new RemoveAnnotationVisitor(RUN_WITH_ENCLOSED_MATCHER)
                         .visitNonNull(cd, ctx, getCursor().getParentTreeCursor());
-                if (hasPerTestLifecycleMethod(cd)) {
-                    // The Enclosed runner never ran the outer class's per-test lifecycle methods around
-                    // the inner classes' tests, but @Nested classes would inherit them.
+                if (hasPerTestLifecycleMethod(cd) || hasInstanceRule(cd)) {
+                    // The Enclosed runner never applied the outer class's per-test lifecycle methods or
+                    // instance rules to the inner classes' tests, but @Nested classes would inherit them.
                     return cd;
                 }
                 cd = cd.withBody((J.Block) new AddMissingNested.AddNestedAnnotationVisitor()
@@ -81,5 +88,24 @@ public class EnclosedToNested extends Recipe {
                 .flatMap(method -> method.getLeadingAnnotations().stream())
                 .anyMatch(annotation -> PER_TEST_LIFECYCLE_ANNOTATIONS.stream()
                         .anyMatch(type -> TypeUtils.isOfClassType(annotation.getType(), type)));
+    }
+
+    private static boolean hasInstanceRule(J.ClassDeclaration cd) {
+        return cd.getBody().getStatements().stream()
+                .flatMap(statement -> instanceMemberAnnotations(statement).stream())
+                .anyMatch(annotation -> PER_INSTANCE_MEMBER_ANNOTATIONS.stream()
+                        .anyMatch(type -> TypeUtils.isOfClassType(annotation.getType(), type)));
+    }
+
+    private static List<J.Annotation> instanceMemberAnnotations(Statement statement) {
+        if (statement instanceof J.VariableDeclarations) {
+            J.VariableDeclarations field = (J.VariableDeclarations) statement;
+            return field.hasModifier(J.Modifier.Type.Static) ? emptyList() : field.getLeadingAnnotations();
+        }
+        if (statement instanceof J.MethodDeclaration) {
+            J.MethodDeclaration method = (J.MethodDeclaration) statement;
+            return method.hasModifier(J.Modifier.Type.Static) ? emptyList() : method.getLeadingAnnotations();
+        }
+        return emptyList();
     }
 }
