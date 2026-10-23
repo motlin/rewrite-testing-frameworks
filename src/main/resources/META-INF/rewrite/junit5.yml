@@ -179,12 +179,13 @@ recipeList:
 ---
 type: specs.openrewrite.org/v1beta/recipe
 name: org.openrewrite.java.testing.junit5.RemoveJUnit4DependencyUnlessLaunched
-displayName: Remove JUnit 4, unless the module launches JUnit 4 tests
+displayName: Remove JUnit 4, unless the module keeps classes on JUnit 4
 description: >-
-  Removes and excludes `junit:junit` in modules that do not run tests with `JUnitCore` or `Request`,
-  as the launcher and the classes it runs stay on JUnit 4.
+  Removes and excludes `junit:junit` in modules where the migration leaves no class on JUnit 4.
+  Modules that run tests with `JUnitCore` or `Request`, declare a class those launchers run, or declare
+  a `@RunWith(Enclosed.class)` class that cannot be migrated automatically keep `junit:junit`.
 preconditions:
-  - org.openrewrite.java.testing.junit5.ModuleHasNoJUnit4Launcher
+  - org.openrewrite.java.testing.junit5.ModuleKeepsNoJUnit4Classes
 recipeList:
   - org.openrewrite.java.dependencies.RemoveDependency:
       groupId: junit
