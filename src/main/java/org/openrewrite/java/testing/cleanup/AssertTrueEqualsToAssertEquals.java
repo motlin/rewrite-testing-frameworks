@@ -31,6 +31,8 @@ import org.openrewrite.java.tree.J;
 public class AssertTrueEqualsToAssertEquals extends Recipe {
     private static final MethodMatcher ASSERT_TRUE = new MethodMatcher(
             "org.junit.jupiter.api.Assertions assertTrue(..)");
+    private static final MethodMatcher OBJECT_EQUALS = new MethodMatcher(
+            "java.lang.Object equals(java.lang.Object)", true);
 
     @Getter
     final String displayName = "Replace JUnit `assertTrue(a.equals(b))` to `assertEquals(a,b)`";
@@ -88,8 +90,7 @@ public class AssertTrueEqualsToAssertEquals extends Recipe {
 
                 J.MethodInvocation methodInvocation = (J.MethodInvocation) expr;
 
-                return "equals".equals(methodInvocation.getName().getSimpleName()) &&
-                        methodInvocation.getArguments().size() == 1 &&
+                return OBJECT_EQUALS.matches(methodInvocation) &&
                         !isNullLiteral(methodInvocation.getArguments().get(0));
             }
 
