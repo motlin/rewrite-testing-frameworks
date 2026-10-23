@@ -172,4 +172,30 @@ class AssertTrueEqualsToAssertEqualsTest implements RewriteTest {
           )
         );
     }
+
+    @Test
+    void retainEqualsOverloadThatIsNotObjectEquals() {
+        //language=java
+        rewriteRun(
+          java(
+            """
+              import org.junit.jupiter.api.Assertions;
+
+              public class Test {
+                  static class Foo {
+                      boolean equals(Foo other) {
+                          return true;
+                      }
+                  }
+
+                  void test() {
+                      Foo a = new Foo();
+                      Foo b = new Foo();
+                      Assertions.assertTrue(a.equals(b));
+                  }
+              }
+              """
+          )
+        );
+    }
 }
