@@ -26,6 +26,10 @@ import org.openrewrite.java.JavaIsoVisitor;
 import org.openrewrite.java.RemoveAnnotationVisitor;
 import org.openrewrite.java.search.UsesType;
 import org.openrewrite.java.tree.J;
+import org.openrewrite.java.tree.TypeUtils;
+
+import java.util.Arrays;
+import java.util.List;
 
 @Value
 @EqualsAndHashCode(callSuper = false)
@@ -34,6 +38,11 @@ public class EnclosedToNested extends Recipe {
     private static final String RUN_WITH = "org.junit.runner.RunWith";
     private static final String RUN_WITH_ENCLOSED = String.format("@%s(%s.class)", RUN_WITH, ENCLOSED);
     private static final AnnotationMatcher RUN_WITH_ENCLOSED_MATCHER = new AnnotationMatcher(RUN_WITH_ENCLOSED);
+    private static final List<String> PER_TEST_LIFECYCLE_ANNOTATIONS = Arrays.asList(
+            "org.junit.Before",
+            "org.junit.After",
+            "org.junit.jupiter.api.BeforeEach",
+            "org.junit.jupiter.api.AfterEach");
 
     String displayName = "JUnit 4 `@RunWith(Enclosed.class)` to JUnit Jupiter `@Nested`";
 
@@ -52,11 +61,25 @@ public class EnclosedToNested extends Recipe {
                 maybeRemoveImport(RUN_WITH);
                 cd = (J.ClassDeclaration) new RemoveAnnotationVisitor(RUN_WITH_ENCLOSED_MATCHER)
                         .visitNonNull(cd, ctx, getCursor().getParentTreeCursor());
+                if (hasPerTestLifecycleMethod(cd)) {
+                    // The Enclosed runner never ran the outer class's per-test lifecycle methods around
+                    // the inner classes' tests, but @Nested classes would inherit them.
+                    return cd;
+                }
                 cd = cd.withBody((J.Block) new AddMissingNested.AddNestedAnnotationVisitor()
                         .visitNonNull(cd.getBody(), ctx, updateCursor(cd)));
                 maybeAddImport("org.junit.jupiter.api.Nested");
                 return cd;
             }
         });
+    }
+
+    private static boolean hasPerTestLifecycleMethod(J.ClassDeclaration cd) {
+        return cd.getBody().getStatements().stream()
+                .filter(J.MethodDeclaration.class::isInstance)
+                .map(J.MethodDeclaration.class::cast)
+                .flatMap(method -> method.getLeadingAnnotations().stream())
+                .anyMatch(annotation -> PER_TEST_LIFECYCLE_ANNOTATIONS.stream()
+                        .anyMatch(type -> TypeUtils.isOfClassType(annotation.getType(), type)));
     }
 }
