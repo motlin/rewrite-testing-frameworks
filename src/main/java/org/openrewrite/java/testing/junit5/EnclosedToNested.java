@@ -28,6 +28,7 @@ import org.openrewrite.java.search.UsesType;
 import org.openrewrite.java.tree.J;
 import org.openrewrite.java.tree.Statement;
 import org.openrewrite.java.tree.TypeUtils;
+import org.openrewrite.marker.SearchResult;
 
 import java.util.Arrays;
 import java.util.List;
@@ -46,6 +47,12 @@ public class EnclosedToNested extends Recipe {
             "org.junit.After",
             "org.junit.jupiter.api.BeforeEach",
             "org.junit.jupiter.api.AfterEach");
+    private static final List<String> CLASS_LEVEL_LIFECYCLE_ANNOTATIONS = Arrays.asList(
+            "org.junit.BeforeClass",
+            "org.junit.AfterClass",
+            "org.junit.ClassRule",
+            "org.junit.jupiter.api.BeforeAll",
+            "org.junit.jupiter.api.AfterAll");
     private static final List<String> PER_INSTANCE_MEMBER_ANNOTATIONS = Arrays.asList(
             "org.junit.Rule",
             "org.junit.jupiter.api.io.TempDir",
@@ -64,11 +71,17 @@ public class EnclosedToNested extends Recipe {
                 if (cd.getLeadingAnnotations().stream().noneMatch(RUN_WITH_ENCLOSED_MATCHER::matches)) {
                     return cd;
                 }
+                boolean hasPerTestSetup = hasPerTestLifecycleMethod(cd) || hasInstanceRule(cd);
+                if (hasPerTestSetup && hasClassLevelLifecycleMember(cd)) {
+                    // @Nested classes would inherit the per-test setup, while independent classes
+                    // would lose the class-level setup that the Enclosed suite ran around them.
+                    return SearchResult.found(cd, "Neither @Nested nor independent classes preserve both the per-test and the class-level setup of this Enclosed class; migrate it manually");
+                }
                 maybeRemoveImport(ENCLOSED);
                 maybeRemoveImport(RUN_WITH);
                 cd = (J.ClassDeclaration) new RemoveAnnotationVisitor(RUN_WITH_ENCLOSED_MATCHER)
                         .visitNonNull(cd, ctx, getCursor().getParentTreeCursor());
-                if (hasPerTestLifecycleMethod(cd) || hasInstanceRule(cd)) {
+                if (hasPerTestSetup) {
                     // The Enclosed runner never applied the outer class's per-test lifecycle methods or
                     // instance rules to the inner classes' tests, but @Nested classes would inherit them.
                     return cd;
@@ -90,11 +103,28 @@ public class EnclosedToNested extends Recipe {
                         .anyMatch(type -> TypeUtils.isOfClassType(annotation.getType(), type)));
     }
 
+    private static boolean hasClassLevelLifecycleMember(J.ClassDeclaration cd) {
+        return cd.getBody().getStatements().stream()
+                .flatMap(statement -> memberAnnotations(statement).stream())
+                .anyMatch(annotation -> CLASS_LEVEL_LIFECYCLE_ANNOTATIONS.stream()
+                        .anyMatch(type -> TypeUtils.isOfClassType(annotation.getType(), type)));
+    }
+
     private static boolean hasInstanceRule(J.ClassDeclaration cd) {
         return cd.getBody().getStatements().stream()
                 .flatMap(statement -> instanceMemberAnnotations(statement).stream())
                 .anyMatch(annotation -> PER_INSTANCE_MEMBER_ANNOTATIONS.stream()
                         .anyMatch(type -> TypeUtils.isOfClassType(annotation.getType(), type)));
+    }
+
+    private static List<J.Annotation> memberAnnotations(Statement statement) {
+        if (statement instanceof J.VariableDeclarations) {
+            return ((J.VariableDeclarations) statement).getLeadingAnnotations();
+        }
+        if (statement instanceof J.MethodDeclaration) {
+            return ((J.MethodDeclaration) statement).getLeadingAnnotations();
+        }
+        return emptyList();
     }
 
     private static List<J.Annotation> instanceMemberAnnotations(Statement statement) {
