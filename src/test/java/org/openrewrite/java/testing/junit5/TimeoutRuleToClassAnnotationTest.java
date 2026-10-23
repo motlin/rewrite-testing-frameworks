@@ -60,7 +60,7 @@ class TimeoutRuleToClassAnnotationTest implements RewriteTest {
 
               import java.util.concurrent.TimeUnit;
 
-              @Timeout(value = 30, unit = TimeUnit.MILLISECONDS)
+              @Timeout(value = 30, unit = TimeUnit.MILLISECONDS, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
               class MyTest {
 
                   void testMethod() {
@@ -95,7 +95,7 @@ class TimeoutRuleToClassAnnotationTest implements RewriteTest {
 
               import java.util.concurrent.TimeUnit;
 
-              @Timeout(value = 30, unit = TimeUnit.SECONDS)
+              @Timeout(value = 30, unit = TimeUnit.SECONDS, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
               class MyTest {
 
                   void testMethod() {
@@ -130,7 +130,7 @@ class TimeoutRuleToClassAnnotationTest implements RewriteTest {
 
               import java.util.concurrent.TimeUnit;
 
-              @Timeout(value = 2, unit = TimeUnit.MINUTES)
+              @Timeout(value = 2, unit = TimeUnit.MINUTES, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
               class MyTest {
 
                   void testMethod() {
@@ -165,7 +165,7 @@ class TimeoutRuleToClassAnnotationTest implements RewriteTest {
 
               import java.util.concurrent.TimeUnit;
 
-              @Timeout(value = 30, unit = TimeUnit.MILLISECONDS)
+              @Timeout(value = 30, unit = TimeUnit.MILLISECONDS, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
               class MyTest {
 
                   void testMethod() {
@@ -200,7 +200,7 @@ class TimeoutRuleToClassAnnotationTest implements RewriteTest {
 
               import java.util.concurrent.TimeUnit;
 
-              @Timeout(value = 30, unit = TimeUnit.SECONDS)
+              @Timeout(value = 30, unit = TimeUnit.SECONDS, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
               class MyTest {
 
                   void testMethod() {
@@ -239,7 +239,7 @@ class TimeoutRuleToClassAnnotationTest implements RewriteTest {
 
               import java.util.concurrent.TimeUnit;
 
-              @Timeout(value = 30, unit = TimeUnit.SECONDS)
+              @Timeout(value = 30, unit = TimeUnit.SECONDS, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
               class MyTest {
 
                   @Rule
