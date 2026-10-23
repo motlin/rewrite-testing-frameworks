@@ -20,6 +20,7 @@ import org.jspecify.annotations.Nullable;
 import org.openrewrite.ExecutionContext;
 import org.openrewrite.Preconditions;
 import org.openrewrite.Recipe;
+import org.openrewrite.Tree;
 import org.openrewrite.TreeVisitor;
 import org.openrewrite.internal.ListUtils;
 import org.openrewrite.java.ChangeMethodTargetToStatic;
@@ -27,6 +28,7 @@ import org.openrewrite.java.JavaIsoVisitor;
 import org.openrewrite.java.MethodMatcher;
 import org.openrewrite.java.search.UsesType;
 import org.openrewrite.java.tree.*;
+import org.openrewrite.marker.Markers;
 
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
@@ -34,6 +36,8 @@ import java.util.List;
 import java.util.Set;
 
 import static java.util.Collections.emptySet;
+import static java.util.Collections.singletonList;
+import static java.util.Objects.requireNonNull;
 import static java.util.stream.Collectors.toList;
 
 public class AssertToAssertions extends Recipe {
@@ -100,6 +104,10 @@ public class AssertToAssertions extends Recipe {
 
             List<JRightPadded<Expression>> args = m.getPadding().getArguments().getPadding().getElements();
             Expression firstArg = args.get(0).getElement();
+            if (isMessageFirstOverload(m) && J.Literal.isLiteralValue(firstArg, null)) {
+                // A null message is equivalent to no message, and Jupiter reads a leading null as the expected value
+                return dropFirstArgument(m);
+            }
             // Suppress arg-switching for Assertions.assertEquals(String, String)
             if (ASSERT_SAME_OR_NOT_SAME_MATCHER.matches(m) || ASSERT_EQUALS_OR_NOT_EQUALS_MATCHER.matches(m)) {
                 return m;
@@ -151,6 +159,35 @@ public class AssertToAssertions extends Recipe {
                 changeTargetToAssertions(mr.getReference().getSimpleName());
             }
             return mr;
+        }
+
+        private static boolean isMessageFirstOverload(J.MethodInvocation m) {
+            JavaType.Method methodType = m.getMethodType();
+            if (methodType == null) {
+                return false;
+            }
+            List<JavaType> parameterTypes = methodType.getParameterTypes();
+            return parameterTypes.size() == m.getArguments().size() &&
+                    TypeUtils.isString(parameterTypes.get(0));
+        }
+
+        private static J.MethodInvocation dropFirstArgument(J.MethodInvocation m) {
+            JavaType.Method methodType = requireNonNull(m.getMethodType());
+            List<JavaType> parameterTypes = methodType.getParameterTypes();
+            List<String> parameterNames = methodType.getParameterNames();
+            methodType = methodType
+                    .withParameterTypes(parameterTypes.subList(1, parameterTypes.size()))
+                    .withParameterNames(parameterNames.subList(1, parameterNames.size()));
+
+            List<Expression> args = m.getArguments();
+            List<Expression> remaining;
+            if (args.size() == 1) {
+                remaining = singletonList(new J.Empty(Tree.randomId(), Space.EMPTY, Markers.EMPTY));
+            } else {
+                remaining = new ArrayList<>(args.subList(1, args.size()));
+                remaining.set(0, remaining.get(0).withPrefix(args.get(0).getPrefix()));
+            }
+            return m.withArguments(remaining).withMethodType(methodType);
         }
 
         @Override

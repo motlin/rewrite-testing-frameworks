@@ -1921,4 +1921,41 @@ class JUnit5MigrationTest implements RewriteTest {
           )
         );
     }
+
+    @Test
+    void dropNullMessageBeforeAssertEqualsNullConversion() {
+        //language=java
+        rewriteRun(
+          java(
+            """
+              import org.junit.Test;
+
+              import static org.junit.Assert.assertEquals;
+
+              public class MyTest {
+                  @Test
+                  public void test() {
+                      Integer a = 1;
+                      Integer b = 1;
+                      assertEquals(null, a, b);
+                  }
+              }
+              """,
+            """
+              import org.junit.jupiter.api.Test;
+
+              import static org.junit.jupiter.api.Assertions.assertEquals;
+
+              public class MyTest {
+                  @Test
+                  public void test() {
+                      Integer a = 1;
+                      Integer b = 1;
+                      assertEquals(a, b);
+                  }
+              }
+              """
+          )
+        );
+    }
 }

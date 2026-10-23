@@ -791,4 +791,49 @@ class AssertToAssertionsTest implements RewriteTest {
           )
         );
     }
+
+    @Test
+    void dropNullLiteralMessage() {
+        //language=java
+        rewriteRun(
+          java(
+            """
+              import org.junit.Test;
+
+              import static org.junit.Assert.*;
+
+              public class MyTest {
+                  @Test
+                  public void test() {
+                      Integer a = 1;
+                      Integer b = 1;
+                      assertEquals(null, a, b);
+                      assertNotEquals(null, a, 2);
+                      assertTrue(null, a > 0);
+                      assertNotNull(null, a);
+                      fail(null);
+                  }
+              }
+              """,
+            """
+              import org.junit.Test;
+
+              import static org.junit.jupiter.api.Assertions.*;
+
+              public class MyTest {
+                  @Test
+                  public void test() {
+                      Integer a = 1;
+                      Integer b = 1;
+                      assertEquals(a, b);
+                      assertNotEquals(a, 2);
+                      assertTrue(a > 0);
+                      assertNotNull(a);
+                      fail();
+                  }
+              }
+              """
+          )
+        );
+    }
 }
