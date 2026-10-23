@@ -1759,4 +1759,67 @@ class JUnit5MigrationTest implements RewriteTest {
           )
         );
     }
+
+    @Test
+    void externalResourceSupportOnlyForClassesThatWereOnJUnit4() {
+        //language=java
+        rewriteRun(
+          spec -> spec.parser(JavaParser.fromJavaVersion()
+            .classpathFromResources(new InMemoryExecutionContext(), "junit-4", "junit-jupiter-api-5")),
+          java(
+            """
+              import org.junit.rules.ExternalResource;
+
+              public class Server extends ExternalResource {
+              }
+              """
+          ),
+          java(
+            """
+              import org.junit.Rule;
+              import org.junit.Test;
+
+              public class VintageTest {
+                  @Rule
+                  public Server server = new Server();
+
+                  @Test
+                  public void test() {
+                  }
+              }
+              """,
+            """
+              import org.junit.Rule;
+              import org.junit.jupiter.api.Test;
+              import org.junit.jupiter.api.extension.ExtendWith;
+              import org.junit.jupiter.migrationsupport.rules.ExternalResourceSupport;
+
+              @ExtendWith(ExternalResourceSupport.class)
+              public class VintageTest {
+                  @Rule
+                  public Server server = new Server();
+
+                  @Test
+                  public void test() {
+                  }
+              }
+              """
+          ),
+          java(
+            """
+              import org.junit.Rule;
+              import org.junit.jupiter.api.Test;
+
+              class JupiterTest {
+                  @Rule
+                  public Server server = new Server();
+
+                  @Test
+                  void test() {
+                  }
+              }
+              """
+          )
+        );
+    }
 }
