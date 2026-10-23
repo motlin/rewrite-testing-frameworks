@@ -164,6 +164,8 @@ recipeList:
   # Convert any leftover ExternalResource rules last, after more specific rules have already run
   - org.openrewrite.java.testing.junit5.HandleExternalResourceRules
   - org.openrewrite.java.testing.junit5.AddJupiterMigrationSupport
+  # Flag rules no recipe above converted, as JUnit Jupiter would silently skip them
+  - org.openrewrite.java.testing.junit5.FindLeftoverJUnit4Rules
 ---
 type: specs.openrewrite.org/v1beta/recipe
 name: org.openrewrite.java.testing.junit5.ExcludeJUnit4UnlessUsingTestcontainers
