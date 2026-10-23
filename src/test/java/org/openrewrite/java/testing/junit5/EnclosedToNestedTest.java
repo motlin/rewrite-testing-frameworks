@@ -369,6 +369,106 @@ class EnclosedToNestedTest implements RewriteTest {
     }
 
     @Test
+    void keepsInnerClassesIndependentWhenOuterClassHasPerTestLifecycleMethods() {
+        //language=java
+        rewriteRun(
+          java(
+            """
+              import org.junit.After;
+              import org.junit.Before;
+              import org.junit.Test;
+              import org.junit.experimental.runners.Enclosed;
+              import org.junit.runner.RunWith;
+
+              @RunWith(Enclosed.class)
+              public class RootTest {
+                  @Before
+                  public void setUp() {
+                  }
+
+                  @After
+                  public void tearDown() {
+                  }
+
+                  public static class InnerTest {
+                      @Test
+                      public void test() {
+                      }
+                  }
+              }
+              """,
+            """
+              import org.junit.jupiter.api.AfterEach;
+              import org.junit.jupiter.api.BeforeEach;
+              import org.junit.jupiter.api.Test;
+
+              public class RootTest {
+                  @BeforeEach
+                  public void setUp() {
+                  }
+
+                  @AfterEach
+                  public void tearDown() {
+                  }
+
+                  public static class InnerTest {
+                      @Test
+                      public void test() {
+                      }
+                  }
+              }
+              """
+          )
+        );
+    }
+
+    @Test
+    void nestsInnerClassesWhenOuterClassHasOnlyClassLevelLifecycleMethods() {
+        //language=java
+        rewriteRun(
+          java(
+            """
+              import org.junit.BeforeClass;
+              import org.junit.Test;
+              import org.junit.experimental.runners.Enclosed;
+              import org.junit.runner.RunWith;
+
+              @RunWith(Enclosed.class)
+              public class RootTest {
+                  @BeforeClass
+                  public static void setUpClass() {
+                  }
+
+                  public static class InnerTest {
+                      @Test
+                      public void test() {
+                      }
+                  }
+              }
+              """,
+            """
+              import org.junit.jupiter.api.BeforeAll;
+              import org.junit.jupiter.api.Nested;
+              import org.junit.jupiter.api.Test;
+
+              public class RootTest {
+                  @BeforeAll
+                  public static void setUpClass() {
+                  }
+
+                  @Nested
+                  public class InnerTest {
+                      @Test
+                      public void test() {
+                      }
+                  }
+              }
+              """
+          )
+        );
+    }
+
+    @Test
     void doesNotAnnotateNonTestInnerClasses() {
         //language=java
         rewriteRun(
