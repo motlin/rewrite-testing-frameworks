@@ -423,6 +423,148 @@ class EnclosedToNestedTest implements RewriteTest {
     }
 
     @Test
+    void keepsInnerClassesIndependentWhenOuterClassHasTemporaryFolderRule() {
+        //language=java
+        rewriteRun(
+          java(
+            """
+              import org.junit.Rule;
+              import org.junit.Test;
+              import org.junit.experimental.runners.Enclosed;
+              import org.junit.rules.TemporaryFolder;
+              import org.junit.runner.RunWith;
+
+              @RunWith(Enclosed.class)
+              public class RootTest {
+                  @Rule
+                  public TemporaryFolder folder = new TemporaryFolder();
+
+                  public static class InnerTest {
+                      @Test
+                      public void test() {
+                      }
+                  }
+              }
+              """,
+            """
+              import org.junit.jupiter.api.Test;
+              import org.junit.jupiter.api.io.TempDir;
+
+              import java.io.File;
+
+              public class RootTest {
+                  @TempDir
+                  public File folder;
+
+                  public static class InnerTest {
+                      @Test
+                      public void test() {
+                      }
+                  }
+              }
+              """
+          )
+        );
+    }
+
+    @Test
+    void keepsInnerClassesIndependentWhenOuterClassHasRuleMethod() {
+        //language=java
+        rewriteRun(
+          java(
+            """
+              import org.junit.Rule;
+              import org.junit.Test;
+              import org.junit.experimental.runners.Enclosed;
+              import org.junit.rules.TestRule;
+              import org.junit.rules.Timeout;
+              import org.junit.runner.RunWith;
+
+              @RunWith(Enclosed.class)
+              public class RootTest {
+                  @Rule
+                  public TestRule rule() {
+                      return Timeout.seconds(1);
+                  }
+
+                  public static class InnerTest {
+                      @Test
+                      public void test() {
+                      }
+                  }
+              }
+              """,
+            """
+              import org.junit.Rule;
+              import org.junit.jupiter.api.Test;
+              import org.junit.rules.TestRule;
+              import org.junit.rules.Timeout;
+
+              public class RootTest {
+                  @Rule
+                  public TestRule rule() {
+                      return Timeout.seconds(1);
+                  }
+
+                  public static class InnerTest {
+                      @Test
+                      public void test() {
+                      }
+                  }
+              }
+              """
+          )
+        );
+    }
+
+    @Test
+    void nestsInnerClassesWhenOuterClassHasOnlyClassRule() {
+        //language=java
+        rewriteRun(
+          java(
+            """
+              import org.junit.ClassRule;
+              import org.junit.Test;
+              import org.junit.experimental.runners.Enclosed;
+              import org.junit.rules.TemporaryFolder;
+              import org.junit.runner.RunWith;
+
+              @RunWith(Enclosed.class)
+              public class RootTest {
+                  @ClassRule
+                  public static TemporaryFolder folder = new TemporaryFolder();
+
+                  public static class InnerTest {
+                      @Test
+                      public void test() {
+                      }
+                  }
+              }
+              """,
+            """
+              import org.junit.jupiter.api.Nested;
+              import org.junit.jupiter.api.Test;
+              import org.junit.jupiter.api.io.TempDir;
+
+              import java.io.File;
+
+              public class RootTest {
+                  @TempDir
+                  public static File folder;
+
+                  @Nested
+                  public class InnerTest {
+                      @Test
+                      public void test() {
+                      }
+                  }
+              }
+              """
+          )
+        );
+    }
+
+    @Test
     void nestsInnerClassesWhenOuterClassHasOnlyClassLevelLifecycleMethods() {
         //language=java
         rewriteRun(
