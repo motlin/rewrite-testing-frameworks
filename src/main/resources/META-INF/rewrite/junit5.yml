@@ -122,8 +122,7 @@ recipeList:
   - org.openrewrite.java.testing.junit5.UseMockitoExtension
   - org.openrewrite.java.testing.hamcrest.AddHamcrestIfUsed
   - org.openrewrite.java.testing.junit5.UseXMLUnitLegacy
-  - org.openrewrite.java.testing.junit5.RemoveJUnit4DependenciesUnlessJUnit3Used
-  - org.openrewrite.java.testing.junit5.ExcludeJUnit4UnlessUsingTestcontainers
+  - org.openrewrite.java.testing.junit5.RemoveJUnit4DependencyUnlessLaunched
   - org.openrewrite.java.testing.junit5.AddJupiterDependencies
   # Older Gradle versions supply a platform launcher that does not align with the Jupiter engine added above
   - org.openrewrite.gradle.AddDependency:
@@ -168,6 +167,18 @@ recipeList:
   - org.openrewrite.java.testing.junit5.AddJupiterMigrationSupport
   # Flag rules no recipe above converted, as JUnit Jupiter would silently skip them
   - org.openrewrite.java.testing.junit5.FindLeftoverJUnit4Rules
+---
+type: specs.openrewrite.org/v1beta/recipe
+name: org.openrewrite.java.testing.junit5.RemoveJUnit4DependencyUnlessLaunched
+displayName: Remove JUnit 4, unless the module launches JUnit 4 tests
+description: >-
+  Removes and excludes `junit:junit` and the vintage engine in modules that do not run tests with `JUnitCore` or `Request`,
+  as the launcher and the classes it runs stay on JUnit 4.
+preconditions:
+  - org.openrewrite.java.testing.junit5.ModuleHasNoJUnit4Launcher
+recipeList:
+  - org.openrewrite.java.testing.junit5.RemoveJUnit4DependenciesUnlessJUnit3Used
+  - org.openrewrite.java.testing.junit5.ExcludeJUnit4UnlessUsingTestcontainers
 ---
 type: specs.openrewrite.org/v1beta/recipe
 name: org.openrewrite.java.testing.junit5.ExcludeJUnit4UnlessUsingTestcontainers
