@@ -36,7 +36,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 public class IsNotRunByJUnit4Launcher extends ScanningRecipe<Set<String>> {
 
-    static final List<MethodMatcher> LAUNCHER_METHODS = Arrays.asList(
+    private static final List<MethodMatcher> LAUNCHER_METHODS = Arrays.asList(
             new MethodMatcher("org.junit.runner.JUnitCore run(..)"),
             new MethodMatcher("org.junit.runner.JUnitCore runClasses(..)"),
             new MethodMatcher("org.junit.runner.Request aClass(..)"),
@@ -64,23 +64,34 @@ public class IsNotRunByJUnit4Launcher extends ScanningRecipe<Set<String>> {
             @Override
             public J.MethodInvocation visitMethodInvocation(J.MethodInvocation method, ExecutionContext ctx) {
                 J.MethodInvocation m = super.visitMethodInvocation(method, ctx);
-                if (LAUNCHER_METHODS.stream().anyMatch(matcher -> matcher.matches(m))) {
-                    for (Expression argument : m.getArguments()) {
-                        new JavaIsoVisitor<Set<String>>() {
-                            @Override
-                            public J.FieldAccess visitFieldAccess(J.FieldAccess fieldAccess, Set<String> classes) {
-                                JavaType.FullyQualified type = TypeUtils.asFullyQualified(fieldAccess.getTarget().getType());
-                                if ("class".equals(fieldAccess.getSimpleName()) && type != null) {
-                                    classes.add(type.getFullyQualifiedName());
-                                }
-                                return super.visitFieldAccess(fieldAccess, classes);
-                            }
-                        }.reduce(argument, launched);
-                    }
+                if (isLauncherCall(m)) {
+                    collectLaunchedClasses(m, launched);
                 }
                 return m;
             }
         };
+    }
+
+    static boolean isLauncherCall(J.MethodInvocation method) {
+        return LAUNCHER_METHODS.stream().anyMatch(matcher -> matcher.matches(method));
+    }
+
+    /**
+     * Adds the fully qualified names of the classes passed as class literals to a launcher call.
+     */
+    static void collectLaunchedClasses(J.MethodInvocation launcherCall, Set<String> launched) {
+        for (Expression argument : launcherCall.getArguments()) {
+            new JavaIsoVisitor<Set<String>>() {
+                @Override
+                public J.FieldAccess visitFieldAccess(J.FieldAccess fieldAccess, Set<String> classes) {
+                    JavaType.FullyQualified type = TypeUtils.asFullyQualified(fieldAccess.getTarget().getType());
+                    if ("class".equals(fieldAccess.getSimpleName()) && type != null) {
+                        classes.add(type.getFullyQualifiedName());
+                    }
+                    return super.visitFieldAccess(fieldAccess, classes);
+                }
+            }.reduce(argument, launched);
+        }
     }
 
     @Override
