@@ -1935,6 +1935,134 @@ class JUnit5MigrationTest implements RewriteTest {
         );
     }
 
+    @Nested
+    class KeepJUnit4InModulesWithLauncher {
+        //language=java
+        private static final String LAUNCHER = """
+          import org.junit.runner.JUnitCore;
+
+          public class Launcher {
+              public static void main(String[] args) {
+                  JUnitCore.runClasses(FooTest.class);
+              }
+          }
+          """;
+
+        //language=java
+        private static final String FOO_TEST = """
+          import org.junit.Test;
+
+          public class FooTest {
+              @Test
+              public void test() {
+              }
+          }
+          """;
+
+        //language=xml
+        private static String pom(String artifactId) {
+            return """
+              <project>
+                  <modelVersion>4.0.0</modelVersion>
+                  <groupId>com.example</groupId>
+                  <artifactId>%s</artifactId>
+                  <version>0.0.1</version>
+                  <dependencies>
+                      <dependency>
+                          <groupId>junit</groupId>
+                          <artifactId>junit</artifactId>
+                          <version>4.13.2</version>
+                          <scope>test</scope>
+                      </dependency>
+                  </dependencies>
+              </project>
+              """.formatted(artifactId);
+        }
+
+        @Test
+        void mavenModuleWithLauncherKeepsJUnit4() {
+            rewriteRun(
+              mavenProject("launched",
+                pomXml(
+                  pom("launched"),
+                  spec -> spec.after(actual -> assertThat(actual)
+                    .containsPattern("<groupId>junit</groupId>\\s*<artifactId>junit</artifactId>")
+                    .actual())
+                ),
+                srcTestJava(
+                  java(LAUNCHER),
+                  java(FOO_TEST)
+                )
+              ),
+              mavenProject("plain",
+                pomXml(
+                  pom("plain"),
+                  spec -> spec.after(actual -> assertThat(actual)
+                    .doesNotContainPattern("<groupId>junit</groupId>\\s*<artifactId>junit</artifactId>")
+                    .contains("<artifactId>junit-jupiter</artifactId>")
+                    .actual())
+                ),
+                srcTestJava(
+                  //language=java
+                  java(
+                    """
+                      import org.junit.Test;
+
+                      public class BarTest {
+                          @Test
+                          public void test() {
+                          }
+                      }
+                      """,
+                    """
+                      import org.junit.jupiter.api.Test;
+
+                      public class BarTest {
+                          @Test
+                          public void test() {
+                          }
+                      }
+                      """
+                  )
+                )
+              )
+            );
+        }
+
+        @Test
+        void gradleModuleWithLauncherKeepsJUnit4() {
+            rewriteRun(
+              spec -> spec.beforeRecipe(withToolingApi()),
+              mavenProject("launched",
+                //language=groovy
+                buildGradle(
+                  """
+                    plugins {
+                        id 'java-library'
+                    }
+                    repositories {
+                        mavenCentral()
+                    }
+                    dependencies {
+                        testImplementation 'junit:junit:4.13.2'
+                    }
+                    tasks.withType(Test).configureEach {
+                        useJUnitPlatform()
+                    }
+                    """,
+                  spec -> spec.after(actual -> assertThat(actual)
+                    .contains("testImplementation 'junit:junit:4.13.2'")
+                    .actual())
+                ),
+                srcTestJava(
+                  java(LAUNCHER),
+                  java(FOO_TEST)
+                )
+              )
+            );
+        }
+    }
+
     @Test
     void dropNullMessageBeforeAssertEqualsNullConversion() {
         //language=java

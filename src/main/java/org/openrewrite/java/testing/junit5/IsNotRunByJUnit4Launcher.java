@@ -36,7 +36,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 public class IsNotRunByJUnit4Launcher extends ScanningRecipe<Set<String>> {
 
-    private static final List<MethodMatcher> LAUNCHER_METHODS = Arrays.asList(
+    static final List<MethodMatcher> LAUNCHER_METHODS = Arrays.asList(
             new MethodMatcher("org.junit.runner.JUnitCore run(..)"),
             new MethodMatcher("org.junit.runner.JUnitCore runClasses(..)"),
             new MethodMatcher("org.junit.runner.Request aClass(..)"),
