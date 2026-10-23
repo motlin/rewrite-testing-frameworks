@@ -18,7 +18,7 @@ package org.openrewrite.java.testing.junit5;
 import lombok.Getter;
 import org.openrewrite.ExecutionContext;
 import org.openrewrite.Preconditions;
-import org.openrewrite.Recipe;
+import org.openrewrite.ScanningRecipe;
 import org.openrewrite.TreeVisitor;
 import org.openrewrite.java.AnnotationMatcher;
 import org.openrewrite.java.JavaIsoVisitor;
@@ -27,15 +27,21 @@ import org.openrewrite.java.JavaTemplate;
 import org.openrewrite.java.search.UsesType;
 import org.openrewrite.java.service.AnnotationService;
 import org.openrewrite.java.tree.J;
+import org.openrewrite.java.tree.JavaType;
+import org.openrewrite.java.tree.Statement;
 import org.openrewrite.java.tree.TypeUtils;
 
+import java.util.HashSet;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import static java.lang.String.format;
 import static java.util.Comparator.comparing;
 
 // Run this last in a declarative recipe list, so it only handles the ExternalResource rules no other recipe migrated.
-public class HandleExternalResourceRules extends Recipe {
+// Classes that were already JUnit Jupiter tests before the migration are skipped: Jupiter never ran their rules,
+// so enabling them would change behavior.
+public class HandleExternalResourceRules extends ScanningRecipe<Set<String>> {
 
     private static final AnnotationMatcher ANY_RULE_ANNOTATION_MATCHER = new AnnotationMatcher("@org.junit.*Rule", true);
     private static final String CLASS_RULE = "org.junit.ClassRule";
@@ -43,6 +49,8 @@ public class HandleExternalResourceRules extends Recipe {
     private static final String EXTERNAL_RESOURCE_SUPPORT = "org.junit.jupiter.migrationsupport.rules.ExternalResourceSupport";
     private static final String EXTEND_WITH = "org.junit.jupiter.api.extension.ExtendWith";
     private static final AnnotationMatcher EXTEND_WITH_ANNOTATION_MATCHER = new AnnotationMatcher(format("@%s(%s.class)", EXTEND_WITH, EXTERNAL_RESOURCE_SUPPORT), true);
+    private static final String JUNIT4_TEST = "org.junit.Test";
+    private static final String JUPITER_PACKAGE_PREFIX = "org.junit.jupiter.";
     private static final String RULE = "org.junit.Rule";
 
     @Getter
@@ -52,13 +60,60 @@ public class HandleExternalResourceRules extends Recipe {
     final String description = "Handles the usage of `ExternalResource` rule fields by adding the `@ExtendWith(ExternalResourceSupport.class)` annotation to the test class.";
 
     @Override
-    public TreeVisitor<?, ExecutionContext> getVisitor() {
+    public Set<String> getInitialValue(ExecutionContext ctx) {
+        return new HashSet<>();
+    }
+
+    /**
+     * Records classes that use JUnit Jupiter annotations and no JUnit 4 {@code @Test}, before any migration step runs.
+     */
+    @Override
+    public TreeVisitor<?, ExecutionContext> getScanner(Set<String> alreadyJupiter) {
+        return new JavaIsoVisitor<ExecutionContext>() {
+            @Override
+            public J.ClassDeclaration visitClassDeclaration(J.ClassDeclaration classDecl, ExecutionContext ctx) {
+                if (classDecl.getType() != null && usesOnlyJupiter(classDecl)) {
+                    alreadyJupiter.add(classDecl.getType().getFullyQualifiedName());
+                }
+                return super.visitClassDeclaration(classDecl, ctx);
+            }
+        };
+    }
+
+    private static boolean usesOnlyJupiter(J.ClassDeclaration classDecl) {
+        boolean jupiter = false;
+        for (Statement statement : classDecl.getBody().getStatements()) {
+            if (!(statement instanceof J.MethodDeclaration)) {
+                continue;
+            }
+            for (J.Annotation annotation : ((J.MethodDeclaration) statement).getLeadingAnnotations()) {
+                JavaType.FullyQualified type = TypeUtils.asFullyQualified(annotation.getType());
+                if (type == null) {
+                    continue;
+                }
+                if (JUNIT4_TEST.equals(type.getFullyQualifiedName())) {
+                    return false;
+                }
+                if (type.getFullyQualifiedName().startsWith(JUPITER_PACKAGE_PREFIX)) {
+                    jupiter = true;
+                }
+            }
+        }
+        return jupiter;
+    }
+
+    @Override
+    public TreeVisitor<?, ExecutionContext> getVisitor(Set<String> alreadyJupiter) {
         return Preconditions.check(
                 Preconditions.or(new UsesType<>(CLASS_RULE, true), new UsesType<>(RULE, true)),
                 new JavaIsoVisitor<ExecutionContext>() {
                     @Override
                     public J.ClassDeclaration visitClassDeclaration(J.ClassDeclaration classDecl, ExecutionContext ctx) {
                         J.ClassDeclaration cd = super.visitClassDeclaration(classDecl, ctx);
+
+                        if (cd.getType() != null && alreadyJupiter.contains(cd.getType().getFullyQualifiedName())) {
+                            return cd;
+                        }
 
                         if (!new ExternalResourceRuleScanner()
                                 .reduce(cd, new AtomicBoolean(), getCursor().getParentOrThrow())

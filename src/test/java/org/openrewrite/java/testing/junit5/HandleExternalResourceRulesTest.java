@@ -102,9 +102,7 @@ class HandleExternalResourceRulesTest implements RewriteTest {
             // before
             """
               import org.junit.Rule;
-              import org.junit.jupiter.api.Test;
-              import org.junit.jupiter.api.extension.ExtendWith;
-              import org.junit.jupiter.migrationsupport.rules.ExternalResourceSupport;
+              import org.junit.Test;
               import org.junit.rules.TemporaryFolder;
 
               public class TestClassWithExternalResourceRuleAndTestMethod {
@@ -116,7 +114,7 @@ class HandleExternalResourceRulesTest implements RewriteTest {
               """,
             """
               import org.junit.Rule;
-              import org.junit.jupiter.api.Test;
+              import org.junit.Test;
               import org.junit.jupiter.api.extension.ExtendWith;
               import org.junit.jupiter.migrationsupport.rules.ExternalResourceSupport;
               import org.junit.rules.TemporaryFolder;
@@ -171,7 +169,7 @@ class HandleExternalResourceRulesTest implements RewriteTest {
             // before
             """
               import org.junit.Rule;
-              import org.junit.jupiter.api.Test;
+              import org.junit.Test;
               import org.junit.rules.TemporaryFolder;
               public class TestClassWithMethodReturnTypeExternalResourceRule {
 
@@ -187,7 +185,7 @@ class HandleExternalResourceRulesTest implements RewriteTest {
               """,
             """
               import org.junit.Rule;
-              import org.junit.jupiter.api.Test;
+              import org.junit.Test;
               import org.junit.jupiter.api.extension.ExtendWith;
               import org.junit.jupiter.migrationsupport.rules.ExternalResourceSupport;
               import org.junit.rules.TemporaryFolder;
@@ -210,6 +208,28 @@ class HandleExternalResourceRulesTest implements RewriteTest {
 
     @Nested
     class NoChange {
+        @Test
+        void classAlreadyOnJupiter() {
+            rewriteRun(
+              // language=java
+              java(
+                // no change expected since JUnit Jupiter never ran the @Rule, so enabling it would change behavior
+                """
+                  import org.junit.Rule;
+                  import org.junit.jupiter.api.Test;
+                  import io.grpc.testing.GrpcCleanupRule;
+
+                  class JupiterTestWithRule {
+                      @Rule public final GrpcCleanupRule grpcCleanup = new GrpcCleanupRule();
+
+                      @Test
+                      void test() {
+                      }
+                  }
+                  """
+              ));
+        }
+
         @Test
         void targetUsageGrpc() {
             rewriteRun(
