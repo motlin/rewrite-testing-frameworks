@@ -55,6 +55,7 @@ preconditions:
       groupIdPattern: org.testng
       artifactIdPattern: testng*
       invertMarking: true
+  - org.openrewrite.java.testing.junit5.IsNotRunByJUnit4Launcher
 recipeList:
   # JUnit 3 tests become JUnit 4 first, so that the rest of this migration only has to deal with JUnit 4
   - org.openrewrite.java.testing.junit4.JUnit3to4Migration
