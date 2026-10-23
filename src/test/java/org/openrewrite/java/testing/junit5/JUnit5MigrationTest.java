@@ -1710,4 +1710,53 @@ class JUnit5MigrationTest implements RewriteTest {
           )
         );
     }
+
+    @Test
+    void testWatcherRuleToTestWatcherExtension() {
+        //language=java
+        rewriteRun(
+          java(
+            """
+              import org.junit.Rule;
+              import org.junit.Test;
+              import org.junit.rules.TestWatcher;
+              import org.junit.runner.Description;
+
+              public class WatchedTest {
+                  @Rule
+                  public TestWatcher watcher = new TestWatcher() {
+                      @Override
+                      protected void failed(Throwable e, Description description) {
+                          System.out.println("failed " + description.getMethodName());
+                      }
+                  };
+
+                  @Test
+                  public void test() {
+                  }
+              }
+              """,
+            """
+              import org.junit.jupiter.api.Test;
+              import org.junit.jupiter.api.extension.ExtensionContext;
+              import org.junit.jupiter.api.extension.RegisterExtension;
+              import org.junit.jupiter.api.extension.TestWatcher;
+
+              public class WatchedTest {
+                  @RegisterExtension
+                  public TestWatcher watcher = new TestWatcher() {
+                      @Override
+                      public void testFailed(ExtensionContext description, Throwable e) {
+                          System.out.println("failed " + description.getRequiredTestMethod().getName());
+                      }
+                  };
+
+                  @Test
+                  public void test() {
+                  }
+              }
+              """
+          )
+        );
+    }
 }

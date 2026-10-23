@@ -105,6 +105,7 @@ recipeList:
   - org.openrewrite.java.testing.junit5.TemporaryFolderToTempDir
   - org.openrewrite.java.testing.junit5.TempDirNonFinal
   - org.openrewrite.java.testing.junit5.TestRuleToTestInfo
+  - org.openrewrite.java.testing.junit5.TestWatcherRuleToExtension
   - org.openrewrite.java.testing.junit5.UpdateBeforeAfterAnnotations
   - org.openrewrite.java.testing.junit5.UpdateTestAnnotation
   - org.openrewrite.java.testing.junit5.TimeoutRuleToClassAnnotation
