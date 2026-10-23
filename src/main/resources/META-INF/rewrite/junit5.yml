@@ -57,6 +57,22 @@ preconditions:
       invertMarking: true
   - org.openrewrite.java.testing.junit5.IsNotRunByJUnit4Launcher
 recipeList:
+  # Outside the precondition below, so the classes it keeps on JUnit 4 still carry a marker asking for manual migration
+  - org.openrewrite.java.testing.junit5.FindUnmigratableEnclosedClasses
+  - org.openrewrite.java.testing.junit5.MigrateJUnit4SourcesToJupiter
+---
+type: specs.openrewrite.org/v1beta/recipe
+name: org.openrewrite.java.testing.junit5.MigrateJUnit4SourcesToJupiter
+displayName: Migrate JUnit 4 sources that can be migrated automatically
+description: >-
+  Migrates JUnit 4.x tests to JUnit Jupiter, skipping sources that declare a `@RunWith(Enclosed.class)` class
+  with both per-test and class-level setup, which stay entirely on JUnit 4.
+tags:
+  - testing
+  - junit
+preconditions:
+  - org.openrewrite.java.testing.junit5.HasNoUnmigratableEnclosedClass
+recipeList:
   - org.openrewrite.java.testing.junit5.MigrateSystemRules
   - org.openrewrite.java.testing.junit5.WireMockRuleToWireMockServer
   - org.openrewrite.java.testing.junit5.UseWiremockExtension
