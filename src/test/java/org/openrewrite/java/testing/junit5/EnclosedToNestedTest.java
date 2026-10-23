@@ -423,6 +423,64 @@ class EnclosedToNestedTest implements RewriteTest {
     }
 
     @Test
+    void marksOuterClassWithPerTestAndClassLevelLifecycleMethods() {
+        //language=java
+        rewriteRun(
+          spec -> spec.recipe(new EnclosedToNested()),
+          java(
+            """
+              import org.junit.Before;
+              import org.junit.BeforeClass;
+              import org.junit.Test;
+              import org.junit.experimental.runners.Enclosed;
+              import org.junit.runner.RunWith;
+
+              @RunWith(Enclosed.class)
+              public class RootTest {
+                  @BeforeClass
+                  public static void setUpClass() {
+                  }
+
+                  @Before
+                  public void setUp() {
+                  }
+
+                  public static class InnerTest {
+                      @Test
+                      public void test() {
+                      }
+                  }
+              }
+              """,
+            """
+              import org.junit.Before;
+              import org.junit.BeforeClass;
+              import org.junit.Test;
+              import org.junit.experimental.runners.Enclosed;
+              import org.junit.runner.RunWith;
+
+              /*~~(Neither @Nested nor independent classes preserve both the per-test and the class-level setup of this Enclosed class; migrate it manually)~~>*/@RunWith(Enclosed.class)
+              public class RootTest {
+                  @BeforeClass
+                  public static void setUpClass() {
+                  }
+
+                  @Before
+                  public void setUp() {
+                  }
+
+                  public static class InnerTest {
+                      @Test
+                      public void test() {
+                      }
+                  }
+              }
+              """
+          )
+        );
+    }
+
+    @Test
     void keepsInnerClassesIndependentWhenOuterClassHasTemporaryFolderRule() {
         //language=java
         rewriteRun(
