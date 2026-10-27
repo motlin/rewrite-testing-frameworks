@@ -594,4 +594,41 @@ class JUnitAssertEqualsToAssertThatTest implements RewriteTest {
           )
         );
     }
+
+    @Test
+    void expectedTypeInferredAsIntersection() {
+        //language=java
+        rewriteRun(
+          java(
+            """
+              import org.junit.jupiter.api.Test;
+
+              import java.util.List;
+
+              import static org.junit.jupiter.api.Assertions.assertEquals;
+
+              public class MyTest {
+                  @Test
+                  public void test(List<Number> actual) {
+                      assertEquals(List.of(1, 2.0), actual);
+                  }
+              }
+              """,
+            """
+              import org.junit.jupiter.api.Test;
+
+              import java.util.List;
+
+              import static org.assertj.core.api.Assertions.assertThat;
+
+              public class MyTest {
+                  @Test
+                  public void test(List<Number> actual) {
+                      assertThat(actual).isEqualTo(List.of(1, 2.0));
+                  }
+              }
+              """
+          )
+        );
+    }
 }
