@@ -808,6 +808,8 @@ public class MigrateJUnitTestCase extends ScanningRecipe<MigrateJUnitTestCase.Ac
 
     private static class TestCaseVisitor extends JavaIsoVisitor<ExecutionContext> {
         private static final MethodMatcher TEST_CASE_SUPER_MATCHER = new MethodMatcher("junit.framework.TestCase <constructor>(..)");
+        private static final MethodMatcher GET_NAME_MATCHER = new MethodMatcher("junit.framework.TestCase getName()");
+        private static final String TEST_INFO = "org.junit.jupiter.api.TestInfo";
         private static final Set<String> SUPERTYPES_REMOVED_BY_MIGRATION = new HashSet<>(asList(
                 "junit.framework.TestCase", "junit.framework.Assert", "junit.framework.Test"));
 
@@ -884,7 +886,18 @@ public class MigrateJUnitTestCase extends ScanningRecipe<MigrateJUnitTestCase.Ac
         @Override
         public J.@Nullable MethodDeclaration visitMethodDeclaration(J.MethodDeclaration method, ExecutionContext ctx) {
             J.MethodDeclaration md = super.visitMethodDeclaration(method, ctx);
+            boolean needsTestInfo = getCursor().getMessage(TEST_INFO) != null;
             updateCursor(md);
+
+            if (needsTestInfo) {
+                md = JavaTemplate.builder("TestInfo testInfo")
+                        .javaParser(JavaParser.fromJavaVersion().classpathFromResources(ctx, "junit-jupiter-api-5"))
+                        .imports(TEST_INFO)
+                        .build()
+                        .apply(getCursor(), md.getCoordinates().replaceParameters());
+                maybeAddImport(TEST_INFO);
+                updateCursor(md);
+            }
 
             JavaType.Method constructorType = md.getMethodType();
             if (md.isConstructor() && constructorType != null && redundant.contains(MethodMatcher.methodPattern(constructorType))) {
@@ -980,7 +993,33 @@ public class MigrateJUnitTestCase extends ScanningRecipe<MigrateJUnitTestCase.Ac
                 isConvertedConstructor(getCursor().firstEnclosing(J.MethodDeclaration.class))) {
                 return null;
             }
-            return super.visitMethodInvocation(method, ctx);
+            J.MethodInvocation m = super.visitMethodInvocation(method, ctx);
+            if (!GET_NAME_MATCHER.matches(m) ||
+                m.getSelect() != null && !(m.getSelect() instanceof J.Identifier && "this".equals(((J.Identifier) m.getSelect()).getSimpleName()))) {
+                return m;
+            }
+            // Jupiter passes the current test to test and lifecycle methods that declare a TestInfo parameter
+            J.MethodDeclaration enclosing = getCursor().firstEnclosing(J.MethodDeclaration.class);
+            if (enclosing == null || !acceptsTestInfo(enclosing)) {
+                return SearchResult.found(m, "JUnit Jupiter has no getName(); pass in a TestInfo from a test or lifecycle method");
+            }
+            getCursor().putMessageOnFirstEnclosing(J.MethodDeclaration.class, TEST_INFO, true);
+            J.Identifier testInfo = new J.Identifier(Tree.randomId(), Space.EMPTY, Markers.EMPTY, emptyList(),
+                    "testInfo", JavaType.ShallowClass.build(TEST_INFO), null);
+            return JavaTemplate.builder("#{any(org.junit.jupiter.api.TestInfo)}.getTestMethod().get().getName()")
+                    .javaParser(JavaParser.fromJavaVersion().classpathFromResources(ctx, "junit-jupiter-api-5"))
+                    .build()
+                    .apply(getCursor(), m.getCoordinates().replace(), testInfo);
+        }
+
+        private boolean acceptsTestInfo(J.MethodDeclaration method) {
+            J.ClassDeclaration owner = getCursor().dropParentUntil(J.MethodDeclaration.class::isInstance)
+                    .firstEnclosing(J.ClassDeclaration.class);
+            return owner != null && isSupertypeTestCase(owner.getType()) &&
+                   !method.isConstructor() && !method.hasModifier(J.Modifier.Type.Static) &&
+                   method.getParameters().stream().allMatch(J.Empty.class::isInstance) &&
+                   (method.getSimpleName().startsWith("test") || "setUp".equals(method.getSimpleName()) ||
+                    "tearDown".equals(method.getSimpleName()));
         }
 
         private boolean isConvertedConstructor(J.@Nullable MethodDeclaration method) {

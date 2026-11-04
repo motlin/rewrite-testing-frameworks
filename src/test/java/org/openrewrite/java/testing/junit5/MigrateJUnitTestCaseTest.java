@@ -3429,4 +3429,97 @@ class MigrateJUnitTestCaseTest implements RewriteTest {
           )
         );
     }
+
+    @Nested
+    class GetName {
+        @Test
+        void injectsTestInfoIntoTestMethod() {
+            //language=java
+            rewriteRun(
+              java(
+                """
+                  import junit.framework.TestCase;
+
+                  public class MathTest extends TestCase {
+                      public void testName() {
+                          assertEquals("testName", getName());
+                      }
+                  }
+                  """,
+                """
+                  import org.junit.jupiter.api.Test;
+                  import org.junit.jupiter.api.TestInfo;
+
+                  import static org.junit.jupiter.api.Assertions.assertEquals;
+
+                  public class MathTest {
+                      @Test
+                      public void testName(TestInfo testInfo) {
+                          assertEquals("testName", testInfo.getTestMethod().get().getName());
+                      }
+                  }
+                  """
+              )
+            );
+        }
+
+        @Test
+        void injectsTestInfoIntoSetUp() {
+            //language=java
+            rewriteRun(
+              java(
+                """
+                  import junit.framework.TestCase;
+
+                  public class MathTest extends TestCase {
+                      private String name;
+
+                      @Override
+                      protected void setUp() {
+                          name = getName();
+                      }
+                  }
+                  """,
+                """
+                  import org.junit.jupiter.api.BeforeEach;
+                  import org.junit.jupiter.api.TestInfo;
+
+                  public class MathTest {
+                      private String name;
+
+                      @BeforeEach
+                      public void setUp(TestInfo testInfo) {
+                          name = testInfo.getTestMethod().get().getName();
+                      }
+                  }
+                  """
+              )
+            );
+        }
+
+        @Test
+        void marksCallOutsideTestAndLifecycleMethods() {
+            //language=java
+            rewriteRun(
+              java(
+                """
+                  import junit.framework.TestCase;
+
+                  public class MathTest extends TestCase {
+                      private String describe() {
+                          return getName();
+                      }
+                  }
+                  """,
+                """
+                  public class MathTest {
+                      private String describe() {
+                          return /*~~(JUnit Jupiter has no getName(); pass in a TestInfo from a test or lifecycle method)~~>*/getName();
+                      }
+                  }
+                  """
+              )
+            );
+        }
+    }
 }
