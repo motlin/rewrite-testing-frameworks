@@ -111,6 +111,11 @@ public class MigrateJUnitTestCase extends ScanningRecipe<MigrateJUnitTestCase.Ac
          * converted too, as the candidate passes its test name on to it.
          */
         final Map<String, String> superclasses = new HashMap<>();
+        /**
+         * For a name candidate that extends another subclass of TestCase, the signature of the superclass constructor
+         * it passes its test name to, which may instead be removed as redundant.
+         */
+        final Map<String, String> superConstructors = new HashMap<>();
         final Map<String, Boolean> classReferences = new HashMap<>();
         private @Nullable Set<String> redundant;
         private @Nullable Map<String, String> convertible;
@@ -143,6 +148,7 @@ public class MigrateJUnitTestCase extends ScanningRecipe<MigrateJUnitTestCase.Ac
          */
         Map<String, String> convertible() {
             if (convertible == null) {
+                Set<String> redundant = redundantConstructors();
                 Map<String, String> result = new HashMap<>();
                 boolean changed = true;
                 while (changed) {
@@ -153,7 +159,8 @@ public class MigrateJUnitTestCase extends ScanningRecipe<MigrateJUnitTestCase.Ac
                             !ambiguousClasses.contains(candidate.getKey()) &&
                             !nonJavaReferencedClasses.contains(candidate.getKey()) &&
                             !classReferences.getOrDefault(candidate.getKey(), false) &&
-                            (superclass == null || result.containsKey(superclass))) {
+                            (superclass == null || result.containsKey(superclass) ||
+                             redundant.contains(superConstructors.get(candidate.getKey())))) {
                             result.put(candidate.getKey(), candidate.getValue());
                             changed = true;
                         }
@@ -339,7 +346,9 @@ public class MigrateJUnitTestCase extends ScanningRecipe<MigrateJUnitTestCase.Ac
                     return tree;
                 }
                 if (tree instanceof J.CompilationUnit) {
-                    boolean skipped = new DeclaresMethod<>(TEST_CASE_RUN_MATCHER).visit(tree, ctx) != tree;
+                    // A TestCase left untouched keeps its constructors, so their callers must keep their arguments
+                    boolean skipped = new DeclaresMethod<>(TEST_CASE_RUN_MATCHER).visit(tree, ctx) != tree ||
+                                      hasUnsupportedTestSetup(tree, getCursor().getParentOrThrow());
                     return constructorScanner(acc, skipped).visitNonNull(tree, ctx, getCursor().getParentOrThrow());
                 }
                 for (JavaType.Method method : ((JavaSourceFile) tree).getTypesInUse().getUsedMethods()) {
@@ -378,6 +387,14 @@ public class MigrateJUnitTestCase extends ScanningRecipe<MigrateJUnitTestCase.Ac
                         JavaType.FullyQualified supertype = type.getDeclaringType().getSupertype();
                         if (supertype != null && !"junit.framework.TestCase".equals(supertype.getFullyQualifiedName())) {
                             acc.superclasses.put(constructor.declaringClass, supertype.getFullyQualifiedName());
+                            for (Statement statement : method.getBody().getStatements()) {
+                                if (statement instanceof J.MethodInvocation && "super".equals(((J.MethodInvocation) statement).getSimpleName())) {
+                                    String superConstructor = constructorSignature(((J.MethodInvocation) statement).getMethodType());
+                                    if (superConstructor != null) {
+                                        acc.superConstructors.put(constructor.declaringClass, superConstructor);
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -527,6 +544,28 @@ public class MigrateJUnitTestCase extends ScanningRecipe<MigrateJUnitTestCase.Ac
         };
     }
 
+    /**
+     * Whether a suite() wraps a TestSetup fixture that cannot be converted to lifecycle methods, which leaves its
+     * TestCase untouched.
+     */
+    private static boolean isUnsupportedTestSetup(J.MethodDeclaration method, Cursor cursor) {
+        J.ClassDeclaration owner = cursor.firstEnclosing(J.ClassDeclaration.class);
+        return owner != null && isSupertypeTestCase(owner.getType()) && isSuite(method) &&
+               containsTestSetup(method) && testSetupLifecycleMethods(method, owner) == null;
+    }
+
+    private static boolean hasUnsupportedTestSetup(Tree tree, Cursor parent) {
+        return new JavaIsoVisitor<AtomicBoolean>() {
+            @Override
+            public J.MethodDeclaration visitMethodDeclaration(J.MethodDeclaration method, AtomicBoolean found) {
+                if (isUnsupportedTestSetup(method, getCursor())) {
+                    found.set(true);
+                }
+                return super.visitMethodDeclaration(method, found);
+            }
+        }.reduce(tree, new AtomicBoolean(), parent).get();
+    }
+
     private TreeVisitor<?, ExecutionContext> migrationVisitor(Set<String> redundant, Map<String, String> convertible) {
         return Preconditions.check(Preconditions.or(
                         new UsesType<>("junit.framework.TestCase", false),
@@ -540,21 +579,16 @@ public class MigrateJUnitTestCase extends ScanningRecipe<MigrateJUnitTestCase.Ac
 
                     @Override
                     public J.CompilationUnit visitCompilationUnit(J.CompilationUnit cu, ExecutionContext ctx) {
-                        boolean[] unsupported = {false};
-                        J.CompilationUnit checked = (J.CompilationUnit) new JavaIsoVisitor<ExecutionContext>() {
-                            @Override
-                            public J.MethodDeclaration visitMethodDeclaration(J.MethodDeclaration method, ExecutionContext ctx) {
-                                J.ClassDeclaration owner = getCursor().firstEnclosing(J.ClassDeclaration.class);
-                                if (owner == null || !isSupertypeTestCase(owner.getType()) || !isSuite(method) ||
-                                    !containsTestSetup(method) || testSetupLifecycleMethods(method, owner) != null) {
+                        if (hasUnsupportedTestSetup(cu, getCursor().getParentTreeCursor())) {
+                            return (J.CompilationUnit) new JavaIsoVisitor<ExecutionContext>() {
+                                @Override
+                                public J.MethodDeclaration visitMethodDeclaration(J.MethodDeclaration method, ExecutionContext ctx) {
+                                    if (isUnsupportedTestSetup(method, getCursor())) {
+                                        return SearchResult.found(method, "Migrate this TestSetup fixture manually to JUnit Jupiter lifecycle methods");
+                                    }
                                     return super.visitMethodDeclaration(method, ctx);
                                 }
-                                unsupported[0] = true;
-                                return SearchResult.found(method, "Migrate this TestSetup fixture manually to JUnit Jupiter lifecycle methods");
-                            }
-                        }.visitNonNull(cu, ctx, getCursor().getParentTreeCursor());
-                        if (unsupported[0]) {
-                            return checked;
+                            }.visitNonNull(cu, ctx, getCursor().getParentTreeCursor());
                         }
                         J.CompilationUnit c = super.visitCompilationUnit(cu, ctx);
                         doAfterVisit(new TestCaseVisitor(redundant, convertible));
@@ -801,12 +835,15 @@ public class MigrateJUnitTestCase extends ScanningRecipe<MigrateJUnitTestCase.Ac
                 convertible.containsKey(md.getMethodType().getDeclaringType().getFullyQualifiedName())) {
                 md = md.withParameters(emptyList())
                         .withMethodType(md.getMethodType().withParameterNames(emptyList()).withParameterTypes(emptyList()));
+                if (md.getBody() != null && md.getBody().getStatements().isEmpty() && md.getLeadingAnnotations().isEmpty()) {
+                    return null;
+                }
             }
 
-            if (onlyConstructorNeedsArguments(md)) {
-                md = SearchResult.found(md, "JUnit Jupiter cannot instantiate a test class whose only constructor takes a String; migrate the remaining constructor callers manually");
-            } else if (isStringConstructor(md)) {
+            if (isStringConstructor(md) && md.getBody() != null && !md.getBody().getStatements().isEmpty()) {
                 md = SearchResult.found(md, "JUnit Jupiter cannot resolve this String constructor parameter; migrate the test name and constructor callers manually");
+            } else if (onlyConstructorNeedsArguments(md)) {
+                md = SearchResult.found(md, "JUnit Jupiter cannot instantiate a test class whose only constructor takes a String; migrate the remaining constructor callers manually");
             }
 
             // Remove suite() methods that return junit.framework.Test or TestSuite

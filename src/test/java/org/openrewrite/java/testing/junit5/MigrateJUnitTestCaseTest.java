@@ -805,7 +805,7 @@ class MigrateJUnitTestCaseTest implements RewriteTest {
               public class MathTest extends BaseTest {
                   private boolean initialized;
 
-                  public MathTest(String name) {
+                  public MathTest() {
                       initialized = true;
                   }
               }
@@ -1341,7 +1341,7 @@ class MigrateJUnitTestCaseTest implements RewriteTest {
                   """,
                 """
                   public class MathTest extends BaseTest {
-                      /*~~(JUnit Jupiter cannot instantiate a test class whose only constructor takes a String; migrate the remaining constructor callers manually)~~>*/public MathTest(String name) {
+                      /*~~(JUnit Jupiter cannot resolve this String constructor parameter; migrate the test name and constructor callers manually)~~>*/public MathTest(String name) {
                           super(name);
                       }
                   }
