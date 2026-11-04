@@ -579,21 +579,16 @@ public class MigrateJUnitTestCase extends ScanningRecipe<MigrateJUnitTestCase.Ac
 
                     @Override
                     public J.CompilationUnit visitCompilationUnit(J.CompilationUnit cu, ExecutionContext ctx) {
-                        boolean[] unsupported = {false};
-                        J.CompilationUnit checked = (J.CompilationUnit) new JavaIsoVisitor<ExecutionContext>() {
-                            @Override
-                            public J.MethodDeclaration visitMethodDeclaration(J.MethodDeclaration method, ExecutionContext ctx) {
-                                J.ClassDeclaration owner = getCursor().firstEnclosing(J.ClassDeclaration.class);
-                                if (owner == null || !isSupertypeTestCase(owner.getType()) || !isSuite(method) ||
-                                    !containsTestSetup(method) || testSetupLifecycleMethods(method, owner) != null) {
+                        if (hasUnsupportedTestSetup(cu, getCursor().getParentTreeCursor())) {
+                            return (J.CompilationUnit) new JavaIsoVisitor<ExecutionContext>() {
+                                @Override
+                                public J.MethodDeclaration visitMethodDeclaration(J.MethodDeclaration method, ExecutionContext ctx) {
+                                    if (isUnsupportedTestSetup(method, getCursor())) {
+                                        return SearchResult.found(method, "Migrate this TestSetup fixture manually to JUnit Jupiter lifecycle methods");
+                                    }
                                     return super.visitMethodDeclaration(method, ctx);
                                 }
-                                unsupported[0] = true;
-                                return SearchResult.found(method, "Migrate this TestSetup fixture manually to JUnit Jupiter lifecycle methods");
-                            }
-                        }.visitNonNull(cu, ctx, getCursor().getParentTreeCursor());
-                        if (unsupported[0]) {
-                            return checked;
+                            }.visitNonNull(cu, ctx, getCursor().getParentTreeCursor());
                         }
                         J.CompilationUnit c = super.visitCompilationUnit(cu, ctx);
                         doAfterVisit(new TestCaseVisitor(redundant, convertible));
