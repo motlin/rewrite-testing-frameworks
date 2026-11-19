@@ -205,6 +205,13 @@ class JUnit3Scanner extends JavaIsoVisitor<ExecutionContext> {
         AtomicBoolean found = new AtomicBoolean();
         JavaIsoVisitor<AtomicBoolean> finder = new JavaIsoVisitor<AtomicBoolean>() {
             @Override
+            public J.FieldAccess visitFieldAccess(J.FieldAccess fieldAccess, AtomicBoolean f) {
+                // the name after the dot, as in this.name, is a field rather than the parameter
+                visit(fieldAccess.getTarget(), f);
+                return fieldAccess;
+            }
+
+            @Override
             public J.Identifier visitIdentifier(J.Identifier identifier, AtomicBoolean f) {
                 if (name.equals(identifier.getSimpleName())) {
                     f.set(true);

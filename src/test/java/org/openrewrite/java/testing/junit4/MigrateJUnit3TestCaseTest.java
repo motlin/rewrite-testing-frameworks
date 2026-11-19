@@ -277,11 +277,19 @@ class MigrateJUnit3TestCaseTest implements RewriteTest {
                   void run() {
                       new MathTest("BAR").testAdd();
                   }
+
+                  void run(String name) {
+                      new MathTest(name).testAdd();
+                  }
               }
               """,
             """
               class Other {
                   void run() {
+                      new MathTest().testAdd();
+                  }
+
+                  void run(String name) {
                       new MathTest().testAdd();
                   }
               }
@@ -326,6 +334,172 @@ class MigrateJUnit3TestCaseTest implements RewriteTest {
                   @Test
                   public void testAdd() {
                       assertTrue(initialized);
+                  }
+              }
+              """
+          )
+        );
+    }
+
+    @Test
+    void fieldNamedLikeTheTestNameDoesNotKeepTheConstructor() {
+        rewriteRun(
+          //language=java
+          java(
+            """
+              import junit.framework.TestCase;
+
+              public class ShadowedNameTest extends TestCase {
+                  private final String name;
+
+                  public ShadowedNameTest(String name) {
+                      super(name);
+                      this.name = "initialized";
+                  }
+              }
+              """,
+            """
+              public class ShadowedNameTest {
+                  private final String name;
+
+                  public ShadowedNameTest() {
+                      this.name = "initialized";
+                  }
+              }
+              """
+          )
+        );
+    }
+
+    @Test
+    void constructorChainThroughSeveralSubclasses() {
+        rewriteRun(
+          //language=java
+          java(
+            """
+              import junit.framework.TestCase;
+
+              public abstract class BaseTest extends TestCase {
+                  protected boolean ready;
+
+                  public BaseTest(String name) {
+                      super(name);
+                      ready = true;
+                  }
+              }
+              """,
+            """
+              public abstract class BaseTest {
+                  protected boolean ready;
+
+                  public BaseTest() {
+                      ready = true;
+                  }
+              }
+              """
+          ),
+          //language=java
+          java(
+            """
+              public abstract class MidTest extends BaseTest {
+                  public MidTest(String name) {
+                      super(name);
+                  }
+              }
+              """,
+            """
+              public abstract class MidTest extends BaseTest {
+              }
+              """
+          ),
+          //language=java
+          java(
+            """
+              public class FooTest extends MidTest {
+                  public FooTest(String name) {
+                      super(name);
+                  }
+
+                  public void testIt() {
+                  }
+              }
+              """,
+            """
+              import org.junit.Test;
+
+              public class FooTest extends MidTest {
+                  @Test
+                  public void testIt() {
+                  }
+              }
+              """
+          )
+        );
+    }
+
+    @Test
+    void classLeftOnJUnit3StopsPassingTheNameToAMigratedClass() {
+        rewriteRun(
+          //language=java
+          java(
+            """
+              import junit.framework.TestCase;
+
+              public class InitializedTest extends TestCase {
+                  private final boolean initialized;
+
+                  public InitializedTest(String name) {
+                      super(name);
+                      initialized = true;
+                  }
+
+                  public void testExample() {
+                      assertTrue(initialized);
+                  }
+              }
+              """,
+            """
+              import org.junit.Test;
+
+              import static org.junit.Assert.assertTrue;
+
+              public class InitializedTest {
+                  private final boolean initialized;
+
+                  public InitializedTest() {
+                      initialized = true;
+                  }
+
+                  @Test
+                  public void testExample() {
+                      assertTrue(initialized);
+                  }
+              }
+              """
+          ),
+          //language=java
+          java(
+            """
+              import junit.framework.TestCase;
+              import junit.framework.TestResult;
+
+              public class CustomRunnerTest extends TestCase {
+                  @Override
+                  public void run(TestResult result) {
+                      new InitializedTest("testExample").testExample();
+                      super.run(result);
+                  }
+              }
+              """,
+            """
+              import junit.framework.TestCase;
+              import junit.framework.TestResult;
+
+              /*~~(Not migrated from JUnit 3: overrides TestCase.run())~~>*/public class CustomRunnerTest extends TestCase {
+                  @Override
+                  public void run(TestResult result) {
+                      new InitializedTest().testExample();
+                      super.run(result);
                   }
               }
               """
@@ -1512,6 +1686,202 @@ class MigrateJUnit3TestCaseTest implements RewriteTest {
                   class Caller {
                       void run() {
                           new MultiThreadedTest("testSomething").testSomething();
+                      }
+                  }
+                  """
+              )
+            );
+        }
+
+        @Test
+        void leaveSubclassUsingTheTestNameAndItsBaseUntouched() {
+            rewriteRun(
+              //language=java
+              java(
+                """
+                  import junit.framework.TestCase;
+
+                  public abstract class BaseTest extends TestCase {
+                      public BaseTest(String name) {
+                          super(name);
+                      }
+                  }
+                  """,
+                """
+                  import junit.framework.TestCase;
+
+                  /*~~(Not migrated from JUnit 3: its subclass FooTest is not migrated: its (String) constructor uses the test name)~~>*/public abstract class BaseTest extends TestCase {
+                      public BaseTest(String name) {
+                          super(name);
+                      }
+                  }
+                  """
+              ),
+              //language=java
+              java(
+                """
+                  public class FooTest extends BaseTest {
+                      public FooTest(String name) {
+                          super(name);
+                          System.out.println(name);
+                      }
+
+                      public void testIt() {
+                      }
+                  }
+                  """,
+                """
+                  /*~~(Not migrated from JUnit 3: its (String) constructor uses the test name)~~>*/public class FooTest extends BaseTest {
+                      public FooTest(String name) {
+                          super(name);
+                          System.out.println(name);
+                      }
+
+                      public void testIt() {
+                      }
+                  }
+                  """
+              )
+            );
+        }
+
+        @Test
+        void leaveSubclassOfABaseUsingTheTestNameUntouched() {
+            rewriteRun(
+              //language=java
+              java(
+                """
+                  import junit.framework.TestCase;
+
+                  public abstract class BaseTest extends TestCase {
+                      protected final String label;
+
+                      public BaseTest(String name) {
+                          super(name);
+                          label = name;
+                      }
+                  }
+                  """,
+                """
+                  import junit.framework.TestCase;
+
+                  /*~~(Not migrated from JUnit 3: its (String) constructor uses the test name)~~>*/public abstract class BaseTest extends TestCase {
+                      protected final String label;
+
+                      public BaseTest(String name) {
+                          super(name);
+                          label = name;
+                      }
+                  }
+                  """
+              ),
+              //language=java
+              java(
+                """
+                  public class FooTest extends BaseTest {
+                      public FooTest(String name) {
+                          super(name);
+                      }
+
+                      public void testIt() {
+                      }
+                  }
+                  """,
+                """
+                  /*~~(Not migrated from JUnit 3: extends BaseTest, which is not migrated: its (String) constructor uses the test name)~~>*/public class FooTest extends BaseTest {
+                      public FooTest(String name) {
+                          super(name);
+                      }
+
+                      public void testIt() {
+                      }
+                  }
+                  """
+              )
+            );
+        }
+
+        @Test
+        void leaveClassWhoseConstructorIsAMethodReference() {
+            rewriteRun(
+              //language=java
+              java(
+                """
+                  import junit.framework.TestCase;
+                  import java.util.function.Function;
+
+                  public class ReferencedTest extends TestCase {
+                      static final Function<String, ReferencedTest> FACTORY = ReferencedTest::new;
+
+                      public ReferencedTest(String name) {
+                          super(name);
+                      }
+
+                      public void testIt() {
+                      }
+                  }
+                  """,
+                """
+                  import junit.framework.TestCase;
+                  import java.util.function.Function;
+
+                  /*~~(Not migrated from JUnit 3: a constructor call passes an argument with effects that dropping the test name would lose)~~>*/public class ReferencedTest extends TestCase {
+                      static final Function<String, ReferencedTest> FACTORY = ReferencedTest::new;
+
+                      public ReferencedTest(String name) {
+                          super(name);
+                      }
+
+                      public void testIt() {
+                      }
+                  }
+                  """
+              )
+            );
+        }
+
+        @Test
+        void leaveClassConstructedWithAnArgumentWithEffects() {
+            rewriteRun(
+              //language=java
+              java(
+                """
+                  import junit.framework.TestCase;
+
+                  class EffectTest extends TestCase {
+                      EffectTest(String name) {
+                          super(name);
+                      }
+
+                      public void testIt() {
+                      }
+                  }
+                  """,
+                """
+                  import junit.framework.TestCase;
+
+                  /*~~(Not migrated from JUnit 3: a constructor call passes an argument with effects that dropping the test name would lose)~~>*/class EffectTest extends TestCase {
+                      EffectTest(String name) {
+                          super(name);
+                      }
+
+                      public void testIt() {
+                      }
+                  }
+                  """
+              ),
+              //language=java
+              java(
+                """
+                  class EffectFactory {
+                      private int counter;
+
+                      void run() {
+                          new EffectTest(nextName()).testIt();
+                      }
+
+                      String nextName() {
+                          return "test" + counter++;
                       }
                   }
                   """
