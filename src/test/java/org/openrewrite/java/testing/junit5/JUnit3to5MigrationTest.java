@@ -243,6 +243,49 @@ class JUnit3to5MigrationTest implements RewriteTest {
           )
         );
     }
+
+    @Test
+    void removeClassLevelLifecycleAnnotationsThatJUnit3Ignored() {
+        //language=java
+        rewriteRun(
+          java(
+            """
+              import junit.framework.TestCase;
+              import org.junit.AfterClass;
+              import org.junit.BeforeClass;
+
+              public class MathTest extends TestCase {
+                  @BeforeClass
+                  public static void init() {
+                  }
+
+                  @AfterClass
+                  public static void destroy() {
+                  }
+
+                  public void testAdd() {
+                  }
+              }
+              """,
+            """
+              import org.junit.jupiter.api.Test;
+
+              public class MathTest {
+                  public static void init() {
+                  }
+
+                  public static void destroy() {
+                  }
+
+                  @Test
+                  public void testAdd() {
+                  }
+              }
+              """
+          )
+        );
+    }
+
     @Nested
     class NoChange {
         @Test

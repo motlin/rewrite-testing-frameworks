@@ -101,15 +101,6 @@ class LifecycleMethodsVisitor extends JUnit3MigrationVisitor {
             (!isNoArgVoid(md) || md.hasModifier(J.Modifier.Type.Static) && !md.getSimpleName().startsWith("test"))) {
             md = (J.MethodDeclaration) new RemoveAnnotationVisitor(JUNIT4_TEST).visitNonNull(md, ctx, getCursor().getParentOrThrow());
         }
-        // JUnit 3 ignored @BeforeClass on a method that ran for every test, and JUnit 4 demands that it is static
-        if (!md.hasModifier(J.Modifier.Type.Static)) {
-            for (String once : Arrays.asList("org.junit.BeforeClass", "org.junit.AfterClass")) {
-                if (md.getLeadingAnnotations().stream().anyMatch(a -> new AnnotationMatcher("@" + once).matches(a))) {
-                    md = (J.MethodDeclaration) new RemoveAnnotationVisitor(new AnnotationMatcher("@" + once)).visitNonNull(md, ctx, getCursor().getParentOrThrow());
-                    maybeRemoveImport(once);
-                }
-            }
-        }
         // JUnit 3 ignored these annotations, JUnit 4 insists on public methods
         if (!md.hasModifier(J.Modifier.Type.Public) && md.getLeadingAnnotations().stream()
                 .anyMatch(a -> JUNIT4_TEST.matches(a) || JUNIT4_BEFORE.matches(a) || JUNIT4_AFTER.matches(a))) {

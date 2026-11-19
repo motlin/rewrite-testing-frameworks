@@ -19,15 +19,19 @@ import org.jspecify.annotations.Nullable;
 import org.openrewrite.Cursor;
 import org.openrewrite.ExecutionContext;
 import org.openrewrite.internal.ListUtils;
+import org.openrewrite.java.AnnotationMatcher;
 import org.openrewrite.java.JavaIsoVisitor;
 import org.openrewrite.java.MethodMatcher;
+import org.openrewrite.java.RemoveAnnotationVisitor;
 import org.openrewrite.java.tree.*;
 
+import java.util.Arrays;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * A migrated class no longer extends {@code TestCase}: calls of the {@code setUp()} and {@code tearDown()} it
- * inherited go, and {@code getName()} reads a {@code TestName} rule instead.
+ * inherited go, {@code getName()} reads a {@code TestName} rule instead, and the {@code @BeforeClass} and
+ * {@code @AfterClass} that JUnit 3 ignored go, before a suite adds the ones that run what its {@code TestSetup} did.
  */
 class TestCaseClassVisitor extends JUnit3MigrationVisitor {
 
@@ -56,6 +60,23 @@ class TestCaseClassVisitor extends JUnit3MigrationVisitor {
             cd = cd.withExtends(null);
         }
         return withoutTestCaseSupertype(cd);
+    }
+
+    @Override
+    public J.MethodDeclaration visitMethodDeclaration(J.MethodDeclaration method, ExecutionContext ctx) {
+        J.MethodDeclaration md = super.visitMethodDeclaration(method, ctx);
+        if (!plan.isMigrated(fqn(directlyDeclaringClass()))) {
+            return md;
+        }
+        // JUnit 3 never ran them, so JUnit 4 must not start to
+        for (String once : Arrays.asList("org.junit.BeforeClass", "org.junit.AfterClass")) {
+            AnnotationMatcher matcher = new AnnotationMatcher("@" + once);
+            if (md.getLeadingAnnotations().stream().anyMatch(matcher::matches)) {
+                md = (J.MethodDeclaration) new RemoveAnnotationVisitor(matcher).visitNonNull(md, ctx, getCursor().getParentOrThrow());
+                maybeRemoveImport(once);
+            }
+        }
+        return md;
     }
 
     @Override

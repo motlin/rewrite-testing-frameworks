@@ -1653,6 +1653,48 @@ class MigrateJUnit3TestCaseTest implements RewriteTest {
     }
 
     @Test
+    void removeClassLevelLifecycleAnnotationsThatJUnit3Ignored() {
+        rewriteRun(
+          //language=java
+          java(
+            """
+              import junit.framework.TestCase;
+              import org.junit.AfterClass;
+              import org.junit.BeforeClass;
+
+              public class MathTest extends TestCase {
+                  @BeforeClass
+                  public static void init() {
+                  }
+
+                  @AfterClass
+                  public static void destroy() {
+                  }
+
+                  public void testAdd() {
+                  }
+              }
+              """,
+            """
+              import org.junit.Test;
+
+              public class MathTest {
+                  public static void init() {
+                  }
+
+                  public static void destroy() {
+                  }
+
+                  @Test
+                  public void testAdd() {
+                  }
+              }
+              """
+          )
+        );
+    }
+
+    @Test
     void dropsTestAnnotationOnAHelper() {
         rewriteRun(
           //language=java
