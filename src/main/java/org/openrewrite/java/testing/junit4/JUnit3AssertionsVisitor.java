@@ -24,6 +24,7 @@ import org.openrewrite.java.tree.*;
 import org.openrewrite.marker.Markers;
 
 import java.util.*;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Predicate;
 
 import static java.util.Collections.emptyList;
@@ -71,6 +72,43 @@ class JUnit3AssertionsVisitor extends JavaIsoVisitor<ExecutionContext> {
             }
         }
         return c;
+    }
+
+    /**
+     * A class extending {@code junit.framework.Assert} inherits only its static assertions, whose inherited names
+     * would hide the static imports they move to.
+     */
+    @Override
+    public J.ClassDeclaration visitClassDeclaration(J.ClassDeclaration classDecl, ExecutionContext ctx) {
+        J.ClassDeclaration cd = super.visitClassDeclaration(classDecl, ctx);
+        if (cd.getExtends() == null || !TypeUtils.isOfClassType(cd.getExtends().getType(), JUNIT3_ASSERT) ||
+            !retargets.test(getCursor()) || callsInheritedJUnit3Assert(cd)) {
+            return cd;
+        }
+        maybeRemoveImport(JUNIT3_ASSERT);
+        cd = cd.withExtends(null);
+        if (cd.getType() instanceof JavaType.Class) {
+            // later recipes see the type, not the extends clause
+            JavaType.Class type = ((JavaType.Class) cd.getType()).withSupertype(JavaType.ShallowClass.build("java.lang.Object"));
+            cd = cd.withType(type).withName(cd.getName().withType(type));
+        }
+        return cd;
+    }
+
+    /**
+     * Whether something such as {@code failNotEquals} is still called through the inherited {@code junit.framework.Assert}.
+     */
+    private static boolean callsInheritedJUnit3Assert(J.ClassDeclaration cd) {
+        return new JavaIsoVisitor<AtomicBoolean>() {
+            @Override
+            public J.MethodInvocation visitMethodInvocation(J.MethodInvocation m, AtomicBoolean found) {
+                if (m.getSelect() == null && m.getMethodType() != null &&
+                    TypeUtils.isOfClassType(m.getMethodType().getDeclaringType(), JUNIT3_ASSERT)) {
+                    found.set(true);
+                }
+                return super.visitMethodInvocation(m, found);
+            }
+        }.reduce(cd.getBody(), new AtomicBoolean()).get();
     }
 
     @Override

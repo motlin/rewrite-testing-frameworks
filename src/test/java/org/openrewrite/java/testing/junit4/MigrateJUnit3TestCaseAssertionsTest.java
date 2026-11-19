@@ -130,6 +130,94 @@ class MigrateJUnit3TestCaseAssertionsTest implements RewriteTest {
     }
 
     @Test
+    void keepTestCaseTypeReferencesWhileMigratingAssertions() {
+        rewriteRun(
+          //language=java
+          java(
+            """
+              import junit.framework.TestCase;
+
+              class SuiteBuilder {
+                  boolean isJUnit3Test(Class<?> c, TestCase test) {
+                      TestCase.assertNotNull(test);
+                      return TestCase.class.isAssignableFrom(c);
+                  }
+              }
+              """,
+            """
+              import junit.framework.TestCase;
+              import org.junit.Assert;
+
+              class SuiteBuilder {
+                  boolean isJUnit3Test(Class<?> c, TestCase test) {
+                      Assert.assertNotNull(test);
+                      return TestCase.class.isAssignableFrom(c);
+                  }
+              }
+              """
+          )
+        );
+    }
+
+    @Test
+    void removeExtendsJUnit3Assert() {
+        rewriteRun(
+          //language=java
+          java(
+            """
+              import junit.framework.Assert;
+
+              class Verify extends Assert {
+                  void check(Object o) {
+                      assertNotNull(o);
+                  }
+              }
+              """,
+            """
+              import static org.junit.Assert.assertNotNull;
+
+              class Verify {
+                  void check(Object o) {
+                      assertNotNull(o);
+                  }
+              }
+              """
+          )
+        );
+    }
+
+    @Test
+    void keepExtendsJUnit3AssertWhileItsOtherMethodsAreCalled() {
+        rewriteRun(
+          //language=java
+          java(
+            """
+              import junit.framework.Assert;
+
+              class Verify extends Assert {
+                  void check(Object o) {
+                      assertNotNull(o);
+                      failNotSame("message", o, o);
+                  }
+              }
+              """,
+            """
+              import junit.framework.Assert;
+
+              import static org.junit.Assert.assertNotNull;
+
+              class Verify extends Assert {
+                  void check(Object o) {
+                      assertNotNull(o);
+                      failNotSame("message", o, o);
+                  }
+              }
+              """
+          )
+        );
+    }
+
+    @Test
     void floatingPointComparisonGetsDelta() {
         rewriteRun(
           //language=java

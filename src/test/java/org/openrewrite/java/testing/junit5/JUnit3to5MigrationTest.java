@@ -125,6 +125,63 @@ class JUnit3to5MigrationTest implements RewriteTest {
     }
 
     @Test
+    void keepTestCaseTypeReferencesWhileMigratingAssertions() {
+        //language=java
+        rewriteRun(
+          java(
+            """
+              import junit.framework.TestCase;
+
+              class SuiteBuilder {
+                  boolean isJUnit3Test(Class<?> c, TestCase test) {
+                      TestCase.assertNotNull(test);
+                      return TestCase.class.isAssignableFrom(c);
+                  }
+              }
+              """,
+            """
+              import junit.framework.TestCase;
+              import org.junit.jupiter.api.Assertions;
+
+              class SuiteBuilder {
+                  boolean isJUnit3Test(Class<?> c, TestCase test) {
+                      Assertions.assertNotNull(test);
+                      return TestCase.class.isAssignableFrom(c);
+                  }
+              }
+              """
+          )
+        );
+    }
+
+    @Test
+    void removeExtendsJUnit3Assert() {
+        //language=java
+        rewriteRun(
+          java(
+            """
+              import junit.framework.Assert;
+
+              class Verify extends Assert {
+                  void check(Object o) {
+                      assertNotNull(o);
+                  }
+              }
+              """,
+            """
+              import static org.junit.jupiter.api.Assertions.assertNotNull;
+
+              class Verify {
+                  void check(Object o) {
+                      assertNotNull(o);
+                  }
+              }
+              """
+          )
+        );
+    }
+
+    @Test
     void testSetupBecomesStaticJupiterLifecycleMethods() {
         //language=java
         rewriteRun(
