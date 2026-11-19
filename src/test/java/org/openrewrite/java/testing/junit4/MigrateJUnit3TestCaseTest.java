@@ -1054,6 +1054,156 @@ class MigrateJUnit3TestCaseTest implements RewriteTest {
     }
 
     @Test
+    void testSetupNextToPerTestFixtures() {
+        rewriteRun(
+          //language=java
+          java(
+            """
+              import junit.extensions.TestSetup;
+              import junit.framework.Test;
+              import junit.framework.TestCase;
+              import junit.framework.TestSuite;
+
+              public class MathTest extends TestCase {
+                  private static String resource;
+                  private static int counter;
+
+                  public static Test suite() {
+                      return new TestSetup(new TestSuite(MathTest.class)) {
+                          @Override
+                          protected void setUp() throws Exception {
+                              resource = "open";
+                              counter = 1;
+                          }
+
+                          @Override
+                          protected void tearDown() throws Exception {
+                              resource = null;
+                          }
+                      };
+                  }
+
+                  @Override
+                  protected void setUp() throws Exception {
+                      super.setUp();
+                      counter++;
+                  }
+
+                  @Override
+                  protected void tearDown() throws Exception {
+                      counter--;
+                      super.tearDown();
+                  }
+              }
+              """,
+            """
+              import org.junit.After;
+              import org.junit.AfterClass;
+              import org.junit.Before;
+              import org.junit.BeforeClass;
+
+              public class MathTest {
+                  private static String resource;
+                  private static int counter;
+
+                  @Before
+                  public void setUp() throws Exception {
+                      counter++;
+                  }
+
+                  @After
+                  public void tearDown() throws Exception {
+                      counter--;
+                  }
+
+                  @BeforeClass
+                  public static void oneTimeSetUp() throws Exception {
+                      resource = "open";
+                      counter = 1;
+                  }
+
+                  @AfterClass
+                  public static void oneTimeTearDown() throws Exception {
+                      resource = null;
+                  }
+              }
+              """
+          )
+        );
+    }
+
+    @Test
+    void oneTimeMethodsDoNotHideInheritedMethods() {
+        rewriteRun(
+          //language=java
+          java(
+            """
+              import junit.extensions.TestSetup;
+              import junit.framework.Test;
+              import junit.framework.TestCase;
+              import junit.framework.TestSuite;
+
+              class BaseTest extends TestCase {
+                  protected static void oneTimeTearDown() {
+                  }
+              }
+
+              class MathTest extends BaseTest {
+                  public static Test suite() {
+                      return new TestSetup(new TestSuite(MathTest.class)) {
+                          protected void setUp() {
+                              System.setProperty("example.mode", "test");
+                          }
+
+                          protected void tearDown() {
+                              System.clearProperty("example.mode");
+                          }
+                      };
+                  }
+
+                  static void oneTimeSetUp() {
+                  }
+
+                  public void testIt() {
+                      oneTimeTearDown();
+                  }
+              }
+              """,
+            """
+              import org.junit.AfterClass;
+              import org.junit.BeforeClass;
+              import org.junit.Test;
+
+              class BaseTest {
+                  protected static void oneTimeTearDown() {
+                  }
+              }
+
+              class MathTest extends BaseTest {
+                  static void oneTimeSetUp() {
+                  }
+
+                  @Test
+                  public void testIt() {
+                      oneTimeTearDown();
+                  }
+
+                  @BeforeClass
+                  public static void oneTimeSetUp2() {
+                      System.setProperty("example.mode", "test");
+                  }
+
+                  @AfterClass
+                  public static void oneTimeTearDown2() {
+                      System.clearProperty("example.mode");
+                  }
+              }
+              """
+          )
+        );
+    }
+
+    @Test
     void aggregateSuiteBecomesSuiteClasses() {
         rewriteRun(
           //language=java
@@ -1624,6 +1774,252 @@ class MigrateJUnit3TestCaseTest implements RewriteTest {
 
                       public void testAdd() {
                       }
+                  }
+                  """
+              )
+            );
+        }
+
+        @Test
+        void leaveTestSetupThatCannotBecomeStaticMethods() {
+            rewriteRun(
+              //language=java
+              java(
+                """
+                  import junit.extensions.TestSetup;
+                  import junit.framework.Test;
+                  import junit.framework.TestCase;
+                  import junit.framework.TestSuite;
+
+                  public class FieldTest extends TestCase {
+                      public FieldTest(String name) {
+                          super(name);
+                      }
+
+                      public static Test suite() {
+                          return new TestSetup(new TestSuite(FieldTest.class)) {
+                              private String resource;
+
+                              protected void setUp() {
+                                  resource = "open";
+                              }
+                          };
+                      }
+                  }
+                  """,
+                """
+                  import junit.extensions.TestSetup;
+                  import junit.framework.Test;
+                  import junit.framework.TestCase;
+                  import junit.framework.TestSuite;
+
+                  /*~~(Not migrated from JUnit 3: its suite() method builds a suite that has no JUnit 4 equivalent)~~>*/public class FieldTest extends TestCase {
+                      public FieldTest(String name) {
+                          super(name);
+                      }
+
+                      public static Test suite() {
+                          return new TestSetup(new TestSuite(FieldTest.class)) {
+                              private String resource;
+
+                              protected void setUp() {
+                                  resource = "open";
+                              }
+                          };
+                      }
+                  }
+                  """
+              ),
+              //language=java
+              java(
+                """
+                  import junit.extensions.TestSetup;
+                  import junit.framework.Test;
+                  import junit.framework.TestCase;
+                  import junit.framework.TestSuite;
+
+                  public class CustomizedSuiteTest extends TestCase {
+                      public static Test suite() {
+                          return new TestSetup(new TestSuite(CustomizedSuiteTest.class) {
+                              public int countTestCases() {
+                                  return 1;
+                              }
+                          }) {
+                              protected void setUp() {
+                                  System.setProperty("example.mode", "test");
+                              }
+                          };
+                      }
+                  }
+                  """,
+                """
+                  import junit.extensions.TestSetup;
+                  import junit.framework.Test;
+                  import junit.framework.TestCase;
+                  import junit.framework.TestSuite;
+
+                  /*~~(Not migrated from JUnit 3: its suite() method builds a suite that has no JUnit 4 equivalent)~~>*/public class CustomizedSuiteTest extends TestCase {
+                      public static Test suite() {
+                          return new TestSetup(new TestSuite(CustomizedSuiteTest.class) {
+                              public int countTestCases() {
+                                  return 1;
+                              }
+                          }) {
+                              protected void setUp() {
+                                  System.setProperty("example.mode", "test");
+                              }
+                          };
+                      }
+                  }
+                  """
+              ),
+              //language=java
+              java(
+                """
+                  import junit.extensions.TestSetup;
+                  import junit.framework.Test;
+                  import junit.framework.TestCase;
+                  import junit.framework.TestSuite;
+
+                  public class SuiteVariableTest extends TestCase {
+                      public static Test suite() {
+                          TestSuite suite = new TestSuite(SuiteVariableTest.class);
+                          return new TestSetup(suite) {
+                              protected void setUp() {
+                                  System.setProperty("example.mode", "test");
+                              }
+                          };
+                      }
+                  }
+                  """,
+                """
+                  import junit.extensions.TestSetup;
+                  import junit.framework.Test;
+                  import junit.framework.TestCase;
+                  import junit.framework.TestSuite;
+
+                  /*~~(Not migrated from JUnit 3: its suite() method builds a suite that has no JUnit 4 equivalent)~~>*/public class SuiteVariableTest extends TestCase {
+                      public static Test suite() {
+                          TestSuite suite = new TestSuite(SuiteVariableTest.class);
+                          return new TestSetup(suite) {
+                              protected void setUp() {
+                                  System.setProperty("example.mode", "test");
+                              }
+                          };
+                      }
+                  }
+                  """
+              ),
+              //language=java
+              java(
+                """
+                  import junit.extensions.TestSetup;
+                  import junit.framework.Test;
+                  import junit.framework.TestCase;
+                  import junit.framework.TestSuite;
+
+                  public class InstanceReferenceTest extends TestCase {
+                      public static Test suite() {
+                          return new TestSetup(new TestSuite(InstanceReferenceTest.class)) {
+                              protected void setUp() {
+                                  this.toString();
+                              }
+                          };
+                      }
+                  }
+                  """,
+                """
+                  import junit.extensions.TestSetup;
+                  import junit.framework.Test;
+                  import junit.framework.TestCase;
+                  import junit.framework.TestSuite;
+
+                  /*~~(Not migrated from JUnit 3: its suite() method builds a suite that has no JUnit 4 equivalent)~~>*/public class InstanceReferenceTest extends TestCase {
+                      public static Test suite() {
+                          return new TestSetup(new TestSuite(InstanceReferenceTest.class)) {
+                              protected void setUp() {
+                                  this.toString();
+                              }
+                          };
+                      }
+                  }
+                  """
+              ),
+              //language=java
+              java(
+                """
+                  import junit.extensions.TestSetup;
+                  import junit.framework.Test;
+                  import junit.framework.TestCase;
+                  import junit.framework.TestSuite;
+
+                  public class InheritedMethodReferenceTest extends TestCase {
+                      public static Test suite() {
+                          return new TestSetup(new TestSuite(InheritedMethodReferenceTest.class)) {
+                              protected void setUp() {
+                                  getTest().countTestCases();
+                              }
+                          };
+                      }
+                  }
+                  """,
+                """
+                  import junit.extensions.TestSetup;
+                  import junit.framework.Test;
+                  import junit.framework.TestCase;
+                  import junit.framework.TestSuite;
+
+                  /*~~(Not migrated from JUnit 3: its suite() method builds a suite that has no JUnit 4 equivalent)~~>*/public class InheritedMethodReferenceTest extends TestCase {
+                      public static Test suite() {
+                          return new TestSetup(new TestSuite(InheritedMethodReferenceTest.class)) {
+                              protected void setUp() {
+                                  getTest().countTestCases();
+                              }
+                          };
+                      }
+                  }
+                  """
+              ),
+              //language=java
+              java(
+                """
+                  import junit.extensions.TestSetup;
+                  import junit.framework.Test;
+                  import junit.framework.TestCase;
+                  import junit.framework.TestSuite;
+
+                  public class InheritedFieldReferenceTest extends TestCase {
+                      public static Test suite() {
+                          return new TestSetup(new TestSuite(InheritedFieldReferenceTest.class)) {
+                              protected void tearDown() {
+                                  fTest.countTestCases();
+                              }
+                          };
+                      }
+                  }
+                  """,
+                """
+                  import junit.extensions.TestSetup;
+                  import junit.framework.Test;
+                  import junit.framework.TestCase;
+                  import junit.framework.TestSuite;
+
+                  /*~~(Not migrated from JUnit 3: its suite() method builds a suite that has no JUnit 4 equivalent)~~>*/public class InheritedFieldReferenceTest extends TestCase {
+                      public static Test suite() {
+                          return new TestSetup(new TestSuite(InheritedFieldReferenceTest.class)) {
+                              protected void tearDown() {
+                                  fTest.countTestCases();
+                              }
+                          };
+                      }
+                  }
+                  """
+              ),
+              //language=java
+              java(
+                """
+                  public class Caller {
+                      Object fixture = new FieldTest("testExample");
                   }
                   """
               )

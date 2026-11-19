@@ -124,6 +124,68 @@ class JUnit3to5MigrationTest implements RewriteTest {
         );
     }
 
+    @Test
+    void testSetupBecomesStaticJupiterLifecycleMethods() {
+        //language=java
+        rewriteRun(
+          java(
+            """
+              import junit.extensions.TestSetup;
+              import junit.framework.Test;
+              import junit.framework.TestCase;
+              import junit.framework.TestSuite;
+
+              public class MathTest extends TestCase {
+                  private static String resource;
+
+                  public static Test suite() {
+                      return new TestSetup(new TestSuite(MathTest.class)) {
+                          @Override
+                          protected void setUp() throws Exception {
+                              resource = "open";
+                          }
+
+                          @Override
+                          protected void tearDown() throws Exception {
+                              resource = null;
+                          }
+                      };
+                  }
+
+                  public void testResource() {
+                      assertEquals("open", resource);
+                  }
+              }
+              """,
+            """
+              import org.junit.jupiter.api.AfterAll;
+              import org.junit.jupiter.api.BeforeAll;
+              import org.junit.jupiter.api.Test;
+
+              import static org.junit.jupiter.api.Assertions.assertEquals;
+
+              public class MathTest {
+                  private static String resource;
+
+                  @Test
+                  public void testResource() {
+                      assertEquals("open", resource);
+                  }
+
+                  @BeforeAll
+                  public static void oneTimeSetUp() throws Exception {
+                      resource = "open";
+                  }
+
+                  @AfterAll
+                  public static void oneTimeTearDown() throws Exception {
+                      resource = null;
+                  }
+              }
+              """
+          )
+        );
+    }
     @Nested
     class NoChange {
         @Test

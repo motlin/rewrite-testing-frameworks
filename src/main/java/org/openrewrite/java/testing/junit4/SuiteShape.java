@@ -17,10 +17,12 @@ package org.openrewrite.java.testing.junit4;
 
 import org.jspecify.annotations.Nullable;
 import org.openrewrite.Tree;
+import org.openrewrite.java.JavaIsoVisitor;
 import org.openrewrite.java.tree.*;
 import org.openrewrite.marker.Markers;
 
 import java.util.*;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import static java.util.Collections.emptyList;
 
@@ -97,6 +99,9 @@ final class SuiteShape {
                         return null;
                     }
                     J.MethodDeclaration m = (J.MethodDeclaration) s;
+                    if (usesTestSetupInstance(m)) {
+                        return null;
+                    }
                     if ("setUp".equals(m.getSimpleName()) && setUp == null) {
                         setUp = m;
                     } else if ("tearDown".equals(m.getSimpleName()) && tearDown == null) {
@@ -178,6 +183,44 @@ final class SuiteShape {
             return null;
         }
         return of(classes, enclosingClass, consumedIds);
+    }
+
+    /**
+     * Whether a {@code TestSetup} method uses the decorator itself, which a static lifecycle method has no access to.
+     * Calls to {@code super.setUp()} and {@code super.tearDown()} do nothing and are dropped.
+     */
+    private static boolean usesTestSetupInstance(J.MethodDeclaration m) {
+        AtomicBoolean uses = new AtomicBoolean();
+        new JavaIsoVisitor<AtomicBoolean>() {
+            @Override
+            public J.MethodInvocation visitMethodInvocation(J.MethodInvocation method, AtomicBoolean u) {
+                if (method.getSelect() instanceof J.Identifier && "super".equals(((J.Identifier) method.getSelect()).getSimpleName()) &&
+                    ("setUp".equals(method.getSimpleName()) || "tearDown".equals(method.getSimpleName()))) {
+                    return method;
+                }
+                if (method.getSelect() == null && (method.getMethodType() == null || !method.getMethodType().hasFlags(Flag.Static))) {
+                    u.set(true);
+                }
+                return super.visitMethodInvocation(method, u);
+            }
+
+            @Override
+            public J.FieldAccess visitFieldAccess(J.FieldAccess fieldAccess, AtomicBoolean u) {
+                visit(fieldAccess.getTarget(), u);
+                return fieldAccess;
+            }
+
+            @Override
+            public J.Identifier visitIdentifier(J.Identifier identifier, AtomicBoolean u) {
+                JavaType.Variable field = identifier.getFieldType();
+                if ("this".equals(identifier.getSimpleName()) || "super".equals(identifier.getSimpleName()) ||
+                    field != null && field.getOwner() instanceof JavaType.FullyQualified && !field.hasFlags(Flag.Static)) {
+                    u.set(true);
+                }
+                return identifier;
+            }
+        }.visit(m.getBody(), uses);
+        return uses.get();
     }
 
     private static @Nullable SuiteShape of(List<Expression> classes, @Nullable String enclosingClass, Set<UUID> consumedIds) {

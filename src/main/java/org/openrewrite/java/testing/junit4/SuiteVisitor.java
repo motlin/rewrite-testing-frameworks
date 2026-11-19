@@ -239,10 +239,20 @@ class SuiteVisitor extends JUnit3MigrationVisitor {
                 .apply(new Cursor(getCursor(), block), block.getCoordinates().lastStatement()));
     }
 
+    /**
+     * Whether the class declares or inherits a method of that name, which a new static method would hide or overload.
+     */
     private static boolean hasMethod(J.ClassDeclaration cd, String name) {
         for (Statement s : cd.getBody().getStatements()) {
             if (s instanceof J.MethodDeclaration && ((J.MethodDeclaration) s).getSimpleName().equals(name)) {
                 return true;
+            }
+        }
+        for (JavaType.FullyQualified t = cd.getType() == null ? null : cd.getType().getSupertype(); t != null; t = t.getSupertype()) {
+            for (JavaType.Method m : t.getMethods()) {
+                if (m.getName().equals(name)) {
+                    return true;
+                }
             }
         }
         return false;
