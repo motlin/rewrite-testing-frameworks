@@ -318,4 +318,139 @@ class JUnit3to5MigrationTest implements RewriteTest {
             );
         }
     }
+
+    @Nested
+    class GetName {
+        @Test
+        void testMethodReadsTestInfo() {
+            //language=java
+            rewriteRun(
+              java(
+                """
+                  import junit.framework.TestCase;
+
+                  public class MathTest extends TestCase {
+                      public void testName() {
+                          assertEquals("testName", getName());
+                      }
+                  }
+                  """,
+                """
+                  import org.junit.jupiter.api.BeforeEach;
+                  import org.junit.jupiter.api.Test;
+                  import org.junit.jupiter.api.TestInfo;
+
+                  import java.lang.reflect.Method;
+                  import java.util.Optional;
+
+                  import static org.junit.jupiter.api.Assertions.assertEquals;
+
+                  public class MathTest {
+                     \s
+                      public String testName;
+
+                      @Test
+                      public void testName() {
+                          assertEquals("testName", testName);
+                      }
+
+                      @BeforeEach
+                      public void setup(TestInfo testInfo) {
+                          Optional<Method> testMethod = testInfo.getTestMethod();
+                          if (testMethod.isPresent()) {
+                              this.testName = testMethod.get().getName();
+                          }
+                      }
+                  }
+                  """
+              )
+            );
+        }
+
+        @Test
+        void setUpReadsTestInfoBeforeItsBody() {
+            //language=java
+            rewriteRun(
+              java(
+                """
+                  import junit.framework.TestCase;
+
+                  public class MathTest extends TestCase {
+                      private String name;
+
+                      @Override
+                      protected void setUp() {
+                          name = getName();
+                      }
+                  }
+                  """,
+                """
+                  import org.junit.jupiter.api.BeforeEach;
+                  import org.junit.jupiter.api.TestInfo;
+
+                  import java.lang.reflect.Method;
+                  import java.util.Optional;
+
+                  public class MathTest {
+                     \s
+                      public String testName;
+
+                      private String name;
+
+                      @BeforeEach
+                      public void setUp(TestInfo testInfo) {
+                          Optional<Method> testMethod = testInfo.getTestMethod();
+                          if (testMethod.isPresent()) {
+                              this.testName = testMethod.get().getName();
+                          }
+                          name = testName;
+                      }
+                  }
+                  """
+              )
+            );
+        }
+
+        @Test
+        void helperReadsFieldSetFromTestInfo() {
+            //language=java
+            rewriteRun(
+              java(
+                """
+                  import junit.framework.TestCase;
+
+                  public class MathTest extends TestCase {
+                      private String describe() {
+                          return getName();
+                      }
+                  }
+                  """,
+                """
+                  import org.junit.jupiter.api.BeforeEach;
+                  import org.junit.jupiter.api.TestInfo;
+
+                  import java.lang.reflect.Method;
+                  import java.util.Optional;
+
+                  public class MathTest {
+                     \s
+                      public String testName;
+
+                      private String describe() {
+                          return testName;
+                      }
+
+                      @BeforeEach
+                      public void setup(TestInfo testInfo) {
+                          Optional<Method> testMethod = testInfo.getTestMethod();
+                          if (testMethod.isPresent()) {
+                              this.testName = testMethod.get().getName();
+                          }
+                      }
+                  }
+                  """
+              )
+            );
+        }
+    }
 }
