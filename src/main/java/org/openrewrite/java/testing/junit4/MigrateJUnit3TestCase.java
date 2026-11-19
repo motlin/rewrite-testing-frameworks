@@ -16,11 +16,20 @@
 package org.openrewrite.java.testing.junit4;
 
 import lombok.Getter;
+import org.jspecify.annotations.Nullable;
 import org.openrewrite.ExecutionContext;
 import org.openrewrite.Preconditions;
 import org.openrewrite.ScanningRecipe;
+import org.openrewrite.Tree;
 import org.openrewrite.TreeVisitor;
 import org.openrewrite.java.search.UsesType;
+import org.openrewrite.java.tree.J;
+import org.openrewrite.java.tree.JavaSourceFile;
+import org.openrewrite.java.tree.JavaType;
+import org.openrewrite.java.tree.Statement;
+
+import java.nio.file.Path;
+import java.util.HashSet;
 
 public class MigrateJUnit3TestCase extends ScanningRecipe<JUnit3MigrationPlan> {
 
@@ -44,13 +53,45 @@ public class MigrateJUnit3TestCase extends ScanningRecipe<JUnit3MigrationPlan> {
 
     @Override
     public TreeVisitor<?, ExecutionContext> getScanner(JUnit3MigrationPlan plan) {
-        return Preconditions.check(
+        TreeVisitor<?, ExecutionContext> testCaseScanner = Preconditions.check(
                 Preconditions.or(
                         new UsesType<>("junit.framework.TestCase", false),
                         new UsesType<>("junit.framework.Test", false),
                         new UsesType<>("junit.framework.TestSuite", false),
                         new UsesType<>("junit.textui.TestRunner", false)),
                 new JUnit3Scanner(plan));
+        return new TreeVisitor<Tree, ExecutionContext>() {
+            @Override
+            public @Nullable Tree visit(@Nullable Tree tree, ExecutionContext ctx) {
+                if (tree instanceof J.CompilationUnit) {
+                    J.CompilationUnit cu = (J.CompilationUnit) tree;
+                    for (J.ClassDeclaration cd : cu.getClasses()) {
+                        recordDeclarations(cd, cu.getSourcePath());
+                    }
+                    return testCaseScanner.visit(tree, ctx);
+                }
+                if (tree instanceof JavaSourceFile) {
+                    // such as Kotlin, whose constructor calls are not rewritten
+                    for (JavaType.Method method : ((JavaSourceFile) tree).getTypesInUse().getUsedMethods()) {
+                        if (method.isConstructor()) {
+                            plan.nonJavaConstructorCallerFqns.add(method.getDeclaringType().getFullyQualifiedName());
+                        }
+                    }
+                }
+                return tree;
+            }
+
+            private void recordDeclarations(J.ClassDeclaration cd, Path sourcePath) {
+                if (cd.getType() != null) {
+                    plan.sourcePathsByDeclaredFqn.computeIfAbsent(cd.getType().getFullyQualifiedName(), k -> new HashSet<>()).add(sourcePath);
+                }
+                for (Statement s : cd.getBody().getStatements()) {
+                    if (s instanceof J.ClassDeclaration) {
+                        recordDeclarations((J.ClassDeclaration) s, sourcePath);
+                    }
+                }
+            }
+        };
     }
 
     @Override

@@ -48,10 +48,11 @@ class NameConstructorVisitor extends JUnit3MigrationVisitor {
             md = md.withParameters(singletonList(new J.Empty(randomId(), Space.EMPTY, Markers.EMPTY)));
         }
         if (md.getBody() != null) {
-            // an explicit super() adds nothing
+            // an explicit super() adds nothing, and this() is what is left of a call of the (String name) constructor
             J.Block body = md.getBody();
             List<Statement> statements = ListUtils.map(body.getStatements(), (i, s) ->
-                    i == 0 && s instanceof J.MethodInvocation && "super".equals(((J.MethodInvocation) s).getSimpleName()) &&
+                    i == 0 && s instanceof J.MethodInvocation &&
+                    ("super".equals(((J.MethodInvocation) s).getSimpleName()) || "this".equals(((J.MethodInvocation) s).getSimpleName())) &&
                     ((J.MethodInvocation) s).getArguments().stream().allMatch(J.Empty.class::isInstance) ? null : s);
             md = md.withBody(body.withStatements(statements));
             // a constructor that throws stays, as a subclass constructor may need to declare what its superclass throws
@@ -83,7 +84,7 @@ class NameConstructorVisitor extends JUnit3MigrationVisitor {
     @Override
     public J.NewClass visitNewClass(J.NewClass newClass, ExecutionContext ctx) {
         J.NewClass nc = super.visitNewClass(newClass, ctx);
-        JavaType.FullyQualified created = TypeUtils.asFullyQualified(nc.getType());
+        JavaType.FullyQualified created = JUnit3Scanner.constructedClass(nc);
         if (created != null && plan.dropsNameArgument(created.getFullyQualifiedName()) && nc.getArguments().size() == 1 &&
             !(nc.getArguments().get(0) instanceof J.Empty)) {
             return nc.withArguments(singletonList(new J.Empty(randomId(), Space.EMPTY, Markers.EMPTY)));

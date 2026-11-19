@@ -17,6 +17,7 @@ package org.openrewrite.java.testing.junit4;
 
 import org.jspecify.annotations.Nullable;
 
+import java.nio.file.Path;
 import java.util.*;
 
 /**
@@ -38,6 +39,14 @@ public class JUnit3MigrationPlan {
      * Classes whose constructor is called with a test name argument that may have effects dropping it would lose.
      */
     final Set<String> unsafeNameArgumentFqns = new HashSet<>();
+    /**
+     * Classes whose constructor is called from a source file in another language, which the migration does not rewrite.
+     */
+    final Set<String> nonJavaConstructorCallerFqns = new HashSet<>();
+    /**
+     * The source files that declare each class, more than one of which leaves callers of its constructors ambiguous.
+     */
+    final Map<String, Set<Path>> sourcePathsByDeclaredFqn = new HashMap<>();
     /**
      * Class literals and {@code suite()} calls that a removed {@code suite()} method takes care of.
      */
@@ -133,6 +142,18 @@ public class JUnit3MigrationPlan {
                 pin(fqn, "a constructor call passes an argument with effects that dropping the test name would lose");
             }
         }
+        for (String fqn : nonJavaConstructorCallerFqns) {
+            ClassInfo info = testCasesByFqn.get(fqn);
+            if (info != null && info.nameConstructor) {
+                pin(fqn, "a source file in another language calls its constructor");
+            }
+        }
+        sourcePathsByDeclaredFqn.forEach((fqn, paths) -> {
+            ClassInfo info = testCasesByFqn.get(fqn);
+            if (paths.size() > 1 && info != null && info.nameConstructor) {
+                pin(fqn, "another source file declares a class with the same name");
+            }
+        });
         boolean changed = true;
         while (changed) {
             changed = false;

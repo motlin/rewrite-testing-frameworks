@@ -133,7 +133,7 @@ class JUnit3Scanner extends JavaIsoVisitor<ExecutionContext> {
 
     private void analyzeConstructors(J.ClassDeclaration cd, ClassInfo info) {
         J.MethodDeclaration nameConstructor = null;
-        boolean hasNoArgConstructor = false;
+        J.MethodDeclaration noArgConstructor = null;
         for (Statement s : cd.getBody().getStatements()) {
             if (!(s instanceof J.MethodDeclaration) || !((J.MethodDeclaration) s).isConstructor()) {
                 continue;
@@ -146,7 +146,7 @@ class JUnit3Scanner extends JavaIsoVisitor<ExecutionContext> {
                 }
             }
             if (params.isEmpty()) {
-                hasNoArgConstructor = true;
+                noArgConstructor = ctor;
             } else if (params.size() == 1 && params.get(0) instanceof J.VariableDeclarations &&
                        TypeUtils.isString(((J.VariableDeclarations) params.get(0)).getType())) {
                 nameConstructor = ctor;
@@ -178,11 +178,27 @@ class JUnit3Scanner extends JavaIsoVisitor<ExecutionContext> {
         }
         if (usesIdentifier(rest, name)) {
             plan.pin(info.fqn, "its (String) constructor uses the test name");
-        } else if (hasNoArgConstructor && !rest.isEmpty()) {
+        } else if (noArgConstructor != null && (!rest.isEmpty() || !onlyDelegates(noArgConstructor))) {
             plan.pin(info.fqn, "it declares a (String) and a no-argument constructor that differ");
         } else {
             info.nameConstructor = true;
         }
+    }
+
+    /**
+     * A constructor that does no more than call another constructor, with at most a test name.
+     */
+    private static boolean onlyDelegates(J.MethodDeclaration ctor) {
+        if (ctor.getBody() == null || ctor.getBody().getStatements().isEmpty()) {
+            return true;
+        }
+        List<Statement> body = ctor.getBody().getStatements();
+        if (body.size() != 1 || !(body.get(0) instanceof J.MethodInvocation)) {
+            return false;
+        }
+        J.MethodInvocation call = (J.MethodInvocation) body.get(0);
+        return ("super".equals(call.getSimpleName()) || "this".equals(call.getSimpleName())) &&
+               call.getArguments().size() == 1 && isSafeNameArgument(call.getArguments().get(0));
     }
 
     private static boolean usesIdentifier(List<Statement> statements, String name) {
@@ -364,7 +380,7 @@ class JUnit3Scanner extends JavaIsoVisitor<ExecutionContext> {
         if (newClass.getConstructorType() != null) {
             recordArgumentsOfJUnit3Types(newClass.getConstructorType(), newClass.getArguments());
         }
-        JavaType.FullyQualified created = TypeUtils.asFullyQualified(newClass.getType());
+        JavaType.FullyQualified created = constructedClass(newClass);
         if (created != null) {
             String fqn = created.getFullyQualifiedName();
             if (newClass.getArguments().size() == 1 && !isSafeNameArgument(newClass.getArguments().get(0))) {
@@ -378,6 +394,13 @@ class JUnit3Scanner extends JavaIsoVisitor<ExecutionContext> {
             }
         }
         return super.visitNewClass(newClass, ctx);
+    }
+
+    /**
+     * The class whose constructor is called, which for an anonymous class is the class it extends.
+     */
+    static JavaType.@Nullable FullyQualified constructedClass(J.NewClass newClass) {
+        return TypeUtils.asFullyQualified(newClass.getClazz() != null ? newClass.getClazz().getType() : newClass.getType());
     }
 
     @Override

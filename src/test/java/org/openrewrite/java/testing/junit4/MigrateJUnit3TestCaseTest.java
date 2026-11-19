@@ -19,11 +19,16 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.openrewrite.DocumentExample;
 import org.openrewrite.InMemoryExecutionContext;
+import org.openrewrite.java.ChangeType;
 import org.openrewrite.java.JavaParser;
+import org.openrewrite.java.tree.J;
+import org.openrewrite.kotlin.KotlinParser;
 import org.openrewrite.test.RecipeSpec;
 import org.openrewrite.test.RewriteTest;
 
 import static org.openrewrite.java.Assertions.java;
+import static org.openrewrite.java.Assertions.mavenProject;
+import static org.openrewrite.kotlin.Assertions.kotlin;
 
 class MigrateJUnit3TestCaseTest implements RewriteTest {
 
@@ -365,6 +370,335 @@ class MigrateJUnit3TestCaseTest implements RewriteTest {
               public class ChildTest extends BaseTest {
                   @Test
                   public void testIt() {
+                  }
+              }
+              """
+          )
+        );
+    }
+
+    @Test
+    void constructorChainThroughSubclassInDependentModule() {
+        rewriteRun(
+          mavenProject("base-module",
+            //language=java
+            java(
+              """
+                package example;
+                import junit.framework.TestCase;
+
+                public abstract class BaseTest extends TestCase {
+                    public BaseTest(String name) {
+                        super(name);
+                    }
+                }
+                """,
+              """
+                package example;
+
+                public abstract class BaseTest {
+                }
+                """
+            )
+          ),
+          mavenProject("dependent-module",
+            //language=java
+            java(
+              """
+                package example;
+
+                public class MathTest extends BaseTest {
+                    public MathTest(String name) {
+                        super(name);
+                    }
+
+                    public void testAdd() {
+                    }
+                }
+                """,
+              """
+                package example;
+
+                import org.junit.Test;
+
+                public class MathTest extends BaseTest {
+                    @Test
+                    public void testAdd() {
+                    }
+                }
+                """
+            ),
+            //language=java
+            java(
+              """
+                package example;
+
+                class Caller {
+                    void run() {
+                        new MathTest("math").testAdd();
+                    }
+                }
+                """,
+              """
+                package example;
+
+                class Caller {
+                    void run() {
+                        new MathTest().testAdd();
+                    }
+                }
+                """
+            )
+          )
+        );
+    }
+
+    @Test
+    void subclassNameConstructorWithInitializationBecomesNoArgument() {
+        rewriteRun(
+          //language=java
+          java(
+            """
+              import junit.framework.TestCase;
+
+              public abstract class BaseTest extends TestCase {
+                  public BaseTest(String name) {
+                      super(name);
+                  }
+              }
+              """,
+            """
+              public abstract class BaseTest {
+              }
+              """
+          ),
+          //language=java
+          java(
+            """
+              public class MathTest extends BaseTest {
+                  private boolean initialized;
+
+                  public MathTest(String name) {
+                      super(name);
+                      initialized = true;
+                  }
+
+                  public void testIt() {
+                  }
+              }
+              """,
+            """
+              import org.junit.Test;
+
+              public class MathTest extends BaseTest {
+                  private boolean initialized;
+
+                  public MathTest() {
+                      initialized = true;
+                  }
+
+                  @Test
+                  public void testIt() {
+                  }
+              }
+              """
+          )
+        );
+    }
+
+    @Test
+    void noArgumentConstructorDelegatingToNameConstructorIsRemoved() {
+        rewriteRun(
+          //language=java
+          java(
+            """
+              import junit.framework.TestCase;
+
+              public class NoArgumentChainTest extends TestCase {
+                  public NoArgumentChainTest() {
+                      this("default");
+                  }
+
+                  public NoArgumentChainTest(String name) {
+                      super(name);
+                  }
+
+                  public void testIt() {
+                  }
+              }
+              """,
+            """
+              import org.junit.Test;
+
+              public class NoArgumentChainTest {
+                  @Test
+                  public void testIt() {
+                  }
+              }
+              """
+          ),
+          //language=java
+          java(
+            """
+              class Other {
+                  void run() {
+                      new NoArgumentChainTest("test").testIt();
+                  }
+              }
+              """,
+            """
+              class Other {
+                  void run() {
+                      new NoArgumentChainTest().testIt();
+                  }
+              }
+              """
+          )
+        );
+    }
+
+    @Test
+    void genericNameConstructorIsRemoved() {
+        rewriteRun(
+          //language=java
+          java(
+            """
+              import junit.framework.TestCase;
+
+              public class GenericNameTest extends TestCase {
+                  public <T> GenericNameTest(String name) {
+                      super(name);
+                  }
+
+                  public void testIt() {
+                      new GenericNameTest("test");
+                  }
+              }
+              """,
+            """
+              import org.junit.Test;
+
+              public class GenericNameTest {
+                  @Test
+                  public void testIt() {
+                      new GenericNameTest();
+                  }
+              }
+              """
+          ),
+          //language=java
+          java(
+            """
+              import junit.framework.TestCase;
+
+              public class PrivateGenericNameTest extends TestCase {
+                  private <T> PrivateGenericNameTest(String name) {
+                      super(name);
+                  }
+
+                  public void testIt() {
+                      new PrivateGenericNameTest("test");
+                  }
+              }
+              """,
+            """
+              import org.junit.Test;
+
+              public class PrivateGenericNameTest {
+                  @Test
+                  public void testIt() {
+                      new PrivateGenericNameTest();
+                  }
+              }
+              """
+          )
+        );
+    }
+
+    @Test
+    void anonymousSubclassCallerStopsPassingTheName() {
+        rewriteRun(
+          //language=java
+          java(
+            """
+              import junit.framework.TestCase;
+
+              public class MathTest extends TestCase {
+                  public MathTest(String name) {
+                      super(name);
+                  }
+
+                  public void testAdd() {
+                  }
+
+                  static void runAnonymous() {
+                      new MathTest("math") {
+                      }.testAdd();
+                  }
+              }
+              """,
+            """
+              import org.junit.Test;
+
+              public class MathTest {
+                  @Test
+                  public void testAdd() {
+                  }
+
+                  static void runAnonymous() {
+                      new MathTest() {
+                      }.testAdd();
+                  }
+              }
+              """
+          )
+        );
+    }
+
+    @Test
+    void memberClassOfNonTestClassLosesNameConstructorAndCallerArgument() {
+        rewriteRun(
+          //language=java
+          java(
+            """
+              import junit.framework.TestCase;
+
+              public class Outer {
+                  public static class InnerTest extends TestCase {
+                      public InnerTest(String name) {
+                          super(name);
+                      }
+
+                      public void testIt() {
+                      }
+                  }
+              }
+              """,
+            """
+              import org.junit.Test;
+
+              public class Outer {
+                  public static class InnerTest {
+                      @Test
+                      public void testIt() {
+                      }
+                  }
+              }
+              """
+          ),
+          //language=java
+          java(
+            """
+              class Caller {
+                  void run() {
+                      new Outer.InnerTest("inner").testIt();
+                  }
+              }
+              """,
+            """
+              class Caller {
+                  void run() {
+                      new Outer.InnerTest().testIt();
                   }
               }
               """
@@ -1134,6 +1468,10 @@ class MigrateJUnit3TestCaseTest implements RewriteTest {
                   public class MultiThreadedTest extends TestCase {
                       private TestResult testResult;
 
+                      public MultiThreadedTest(String name) {
+                          super(name);
+                      }
+
                       @Override
                       public void run(TestResult result) {
                           this.testResult = result;
@@ -1152,6 +1490,10 @@ class MigrateJUnit3TestCaseTest implements RewriteTest {
                   /*~~(Not migrated from JUnit 3: overrides TestCase.run())~~>*/public class MultiThreadedTest extends TestCase {
                       private TestResult testResult;
 
+                      public MultiThreadedTest(String name) {
+                          super(name);
+                      }
+
                       @Override
                       public void run(TestResult result) {
                           this.testResult = result;
@@ -1160,6 +1502,16 @@ class MigrateJUnit3TestCaseTest implements RewriteTest {
 
                       public void testSomething() {
                           assertTrue(true);
+                      }
+                  }
+                  """
+              ),
+              //language=java
+              java(
+                """
+                  class Caller {
+                      void run() {
+                          new MultiThreadedTest("testSomething").testSomething();
                       }
                   }
                   """
@@ -1455,6 +1807,145 @@ class MigrateJUnit3TestCaseTest implements RewriteTest {
                       public void testIt() {
                       }
                   }
+                  """
+              )
+            );
+        }
+
+        @Test
+        void leaveClassWhoseNoArgumentConstructorDoesMore() {
+            rewriteRun(
+              //language=java
+              java(
+                """
+                  import junit.framework.TestCase;
+
+                  public class DefaultBehaviorTest extends TestCase {
+                      public DefaultBehaviorTest(String name) {
+                          super(name);
+                      }
+
+                      public DefaultBehaviorTest() {
+                          System.out.println("default");
+                      }
+
+                      public void testIt() {
+                          new DefaultBehaviorTest("math");
+                      }
+                  }
+                  """,
+                """
+                  import junit.framework.TestCase;
+
+                  /*~~(Not migrated from JUnit 3: it declares a (String) and a no-argument constructor that differ)~~>*/public class DefaultBehaviorTest extends TestCase {
+                      public DefaultBehaviorTest(String name) {
+                          super(name);
+                      }
+
+                      public DefaultBehaviorTest() {
+                          System.out.println("default");
+                      }
+
+                      public void testIt() {
+                          new DefaultBehaviorTest("math");
+                      }
+                  }
+                  """
+              )
+            );
+        }
+
+        @Test
+        void leaveClassWhoseNameIsDeclaredInAnotherModule() {
+            rewriteRun(
+              mavenProject("first-module",
+                //language=java
+                java(
+                  """
+                    import junit.framework.TestCase;
+
+                    public class SharedTest extends TestCase {
+                        public SharedTest(String name) {
+                            super(name);
+                        }
+
+                        public void testIt() {
+                            new SharedTest("shared");
+                        }
+                    }
+                    """,
+                  """
+                    import junit.framework.TestCase;
+
+                    /*~~(Not migrated from JUnit 3: another source file declares a class with the same name)~~>*/public class SharedTest extends TestCase {
+                        public SharedTest(String name) {
+                            super(name);
+                        }
+
+                        public void testIt() {
+                            new SharedTest("shared");
+                        }
+                    }
+                    """
+                )
+              ),
+              mavenProject("second-module",
+                //language=java
+                java(
+                  """
+                    public class OtherSharedTest {
+                        public OtherSharedTest(String name) {
+                        }
+
+                        static void create() {
+                            new OtherSharedTest("other");
+                        }
+                    }
+                    """,
+                  spec -> spec.mapBeforeRecipe(cu -> (J.CompilationUnit) new ChangeType("OtherSharedTest", "SharedTest", false)
+                    .getVisitor().visitNonNull(cu, new InMemoryExecutionContext()))
+                )
+              )
+            );
+        }
+
+        @Test
+        void leaveClassConstructedFromKotlin() {
+            rewriteRun(
+              spec -> spec.parser(KotlinParser.builder()
+                .classpathFromResources(new InMemoryExecutionContext(), "junit-4")
+                .dependsOn("class MixedTest(name: String) : junit.framework.TestCase(name) { fun testIt() {} }")),
+              //language=java
+              java(
+                """
+                  import junit.framework.TestCase;
+
+                  public class MixedTest extends TestCase {
+                      public MixedTest(String name) {
+                          super(name);
+                      }
+
+                      public void testIt() {
+                      }
+                  }
+                  """,
+                """
+                  import junit.framework.TestCase;
+
+                  /*~~(Not migrated from JUnit 3: a source file in another language calls its constructor)~~>*/public class MixedTest extends TestCase {
+                      public MixedTest(String name) {
+                          super(name);
+                      }
+
+                      public void testIt() {
+                      }
+                  }
+                  """
+              ),
+              //language=kotlin
+              kotlin(
+                """
+                  fun runMixedTest() = MixedTest("mixed").testIt()
                   """
               )
             );
